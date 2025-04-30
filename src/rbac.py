@@ -18,11 +18,11 @@ from google.adk.tools import BaseTool, FunctionTool # BaseTool covers FunctionTo
 try:
     from .neo4j_adk_tools import ALL_ADK_TOOLS   # NEW: Import the map directly
     # Also need the original read wrapper for the routing check
-    from .agent import wrapped_read_neo4j_cypher
+    from .wrappers import wrapped_read_neo4j_cypher # Import from wrappers now
 except ImportError:
     # Fallback for different execution contexts
-    from neo4j_adk_tools import ALL_ADK_TOOLS # type: ignore
-    from agent import wrapped_read_neo4j_cypher # type: ignore
+    from src.neo4j_adk_tools import ALL_ADK_TOOLS # type: ignore # Use absolute path
+    from src.wrappers import wrapped_read_neo4j_cypher # type: ignore # Use absolute path
 
 
 # ----------------------------------------------------------------------------------

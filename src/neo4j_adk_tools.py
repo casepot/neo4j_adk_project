@@ -18,7 +18,7 @@ from google.adk.tools import FunctionTool, BaseTool
 # Import the original async wrapper functions
 # Note: Ensure agent.py is structured correctly for these imports
 try:
-    from .agent import (
+    from .wrappers import ( # Import from the new wrappers file
         wrapped_get_neo4j_schema,
         wrapped_read_neo4j_cypher,
         wrapped_write_neo4j_cypher,
@@ -26,7 +26,7 @@ try:
     )
 except ImportError:
     # Fallback for direct execution or different project structures
-    from agent import ( # type: ignore
+    from src.wrappers import ( # type: ignore # Use absolute path
         wrapped_get_neo4j_schema,
         wrapped_read_neo4j_cypher,
         wrapped_write_neo4j_cypher,

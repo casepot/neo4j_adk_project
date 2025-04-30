@@ -12,7 +12,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, List, Tuple
 from neo4j import (
-    AsyncSession, Query, Result, Summary, AsyncDriver,
+    AsyncSession, Query, Result, ResultSummary, AsyncDriver, # Changed Summary to ResultSummary
     READ_ACCESS, WRITE_ACCESS
 )
 from neo4j.exceptions import ClientError, ServiceUnavailable, AuthError
@@ -76,7 +76,7 @@ async def _execute_cypher_session(
     """Executes a query within a session, handling timeout and results."""
     results_list = []
     summary_dict = {}
-    summary: Optional[Summary] = None
+    summary: Optional[ResultSummary] = None # Changed Summary to ResultSummary
 
     try:
         # Neo4j Python driver uses transaction_timeout config, but we add an
