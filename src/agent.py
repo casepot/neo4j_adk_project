@@ -4,35 +4,63 @@ Contains DB bootstrap logic and the original Neo4j wrapper functions.
 These wrappers handle the direct interaction with the Neo4j driver.
 """
 
+import os
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
+from neo4j import AsyncGraphDatabase, AsyncDriver
 
-# Placeholder for Neo4j driver instance (to be initialized)
-# driver = None
+# Import neo4j_tools - ensure it exists and has the required functions
+try:
+    import neo4j_tools
+except ImportError:
+    print("Warning: neo4j_tools.py not found or has import errors. Wrapper functions will rely on placeholder implementations in neo4j_tools.")
+    # Define dummy functions if neo4j_tools is missing, to allow agent.py to load
+    class neo4j_tools:
+        @staticmethod
+        async def get_schema(**kwargs): return {"status": "error", "data": "neo4j_tools not implemented"}
+        @staticmethod
+        async def run_cypher(**kwargs): return {"status": "error", "data": "neo4j_tools not implemented"}
+
+
+# Global Neo4j driver instance
+driver: Optional[AsyncDriver] = None
 
 async def initialize_neo4j_driver():
     """Initializes the Neo4j driver based on environment variables."""
     global driver
-    # TODO: Implement actual driver initialization using credentials from .env
-    # from neo4j import AsyncGraphDatabase
-    # import os
-    # from dotenv import load_dotenv
-    # load_dotenv()
-    # NEO4J_URI = os.getenv("NEO4J_URI")
-    # NEO4J_USER = os.getenv("NEO4J_USER")
-    # NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-    # driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-    print("Neo4j driver initialized (placeholder).")
-    # await driver.verify_connectivity() # Optional: Check connection
+    if driver:
+        print("Neo4j driver already initialized.")
+        return
+
+    load_dotenv()
+    NEO4J_URI = os.getenv("NEO4J_URI")
+    NEO4J_USER = os.getenv("NEO4J_USER")
+    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+    if not NEO4J_URI or not NEO4J_USER or not NEO4J_PASSWORD:
+        print("Error: Neo4j connection details (URI, USER, PASSWORD) not found in environment variables.")
+        # In a real app, you might raise an exception here
+        return
+
+    try:
+        print(f"Attempting to connect to Neo4j at {NEO4J_URI} as user {NEO4J_USER}...")
+        driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+        await driver.verify_connectivity()
+        print("Neo4j driver initialized successfully.")
+    except Exception as e:
+        print(f"Error initializing Neo4j driver: {e}")
+        driver = None # Ensure driver is None if initialization fails
 
 async def shutdown_neo4j_driver():
     """Closes the Neo4j driver connection."""
     global driver
-    # if driver:
-    #     await driver.close()
-    #     print("Neo4j driver closed.")
-    # else:
-    #     print("Neo4j driver was not initialized.")
-    print("Neo4j driver closed (placeholder).")
+    if driver:
+        print("Closing Neo4j driver...")
+        await driver.close()
+        driver = None
+        print("Neo4j driver closed.")
+    else:
+        print("Neo4j driver was not initialized or already closed.")
 
 
 # --- Core Neo4j Wrappers ---
@@ -56,11 +84,15 @@ async def wrapped_get_neo4j_schema(
     Returns:
         Dict[str, Any]: {"status": "success"|"error", "data": [schema_info]|error_message}
     """
-    # TODO: Implement actual schema fetching logic using neo4j_tools helpers
+    if not driver:
+        return {"status": "error", "data": "Neo4j driver not initialized."}
     print(f"Executing wrapped_get_neo4j_schema(db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
-    # Example call structure:
-    # return await neo4j_tools.get_schema(db=db, impersonate=db_impersonate, timeout_ms=timeout_ms)
-    return {"status": "success", "data": ["Schema: (:Label1)-[:REL]->(:Label2 {prop: 'string'})"]} # Placeholder
+    return await neo4j_tools.get_schema(
+        driver=driver,
+        db=db,
+        impersonate=db_impersonate,
+        timeout_ms=timeout_ms
+    )
 
 
 async def wrapped_read_neo4j_cypher(
@@ -88,13 +120,27 @@ async def wrapped_read_neo4j_cypher(
     Returns:
         Dict[str, Any]: {"status": "success"|"error", "data": [query_results]|error_message}
     """
-    # TODO: Implement actual read logic using neo4j_tools helpers
+    if not driver:
+        return {"status": "error", "data": "Neo4j driver not initialized."}
     print(f"Executing wrapped_read_neo4j_cypher(query='{query}', params={params}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms}, route_read={route_read})")
-    # Example call structure:
-    # return await neo4j_tools.run_cypher(query, params, db=db, impersonate=db_impersonate, timeout_ms=timeout_ms, access_mode="READ", route_read=route_read)
-    if "CREATE" in query.upper() or "MERGE" in query.upper() or "DELETE" in query.upper() or "SET" in query.upper():
-         return {"status": "error", "data": "Write operations forbidden in read tool."}
-    return {"status": "success", "data": [{"n": {"name": "Alice"}}]} # Placeholder
+    # Basic client-side check (belt-and-suspenders) - the real check is in neo4j_tools
+    if any(op in query.upper() for op in ["CREATE", "MERGE", "DELETE", "SET", "REMOVE", "CALL"]):
+        # Allow CALL for read-only procedures like db.schema.visualization() or specific GDS reads if needed,
+        # but generally safer to block CALL in the pure read wrapper unless explicitly designed for.
+        # A more robust check might parse the query or use EXPLAIN.
+        # For now, we rely on the access_mode="READ" in neo4j_tools.
+        pass # Let neo4j_tools handle the access mode enforcement
+
+    return await neo4j_tools.run_cypher(
+        driver=driver,
+        query=query,
+        params=params,
+        db=db,
+        impersonate=db_impersonate,
+        timeout_ms=timeout_ms,
+        access_mode="READ",
+        route_read=route_read
+    )
 
 
 async def wrapped_write_neo4j_cypher(
@@ -120,11 +166,18 @@ async def wrapped_write_neo4j_cypher(
     Returns:
         Dict[str, Any]: {"status": "success"|"error", "data": {"results": [...], "summary": {...counters...}}|error_message}
     """
-    # TODO: Implement actual write logic using neo4j_tools helpers
+    if not driver:
+        return {"status": "error", "data": "Neo4j driver not initialized."}
     print(f"Executing wrapped_write_neo4j_cypher(query='{query}', params={params}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
-    # Example call structure:
-    # return await neo4j_tools.run_cypher(query, params, db=db, impersonate=db_impersonate, timeout_ms=timeout_ms, access_mode="WRITE")
-    return {"status": "success", "data": {"results": [{"u": {"name": "Bob"}}], "summary": {"nodes_created": 1}}} # Placeholder
+    return await neo4j_tools.run_cypher(
+        driver=driver,
+        query=query,
+        params=params,
+        db=db,
+        impersonate=db_impersonate,
+        timeout_ms=timeout_ms,
+        access_mode="WRITE"
+    )
 
 
 async def wrapped_run_gds_cypher(
@@ -137,7 +190,7 @@ async def wrapped_run_gds_cypher(
 ) -> Dict[str, Any]:
     """
     Executes a Cypher query intended for the Neo4j Graph Data Science library.
-    Uses a WRITE session as GDS procedures often require it.
+    Uses a WRITE session as GDS procedures often require it (e.g., writing results back).
 
     Parameters:
         query (str): The GDS Cypher query (e.g., CALL gds...).
@@ -150,11 +203,16 @@ async def wrapped_run_gds_cypher(
     Returns:
         Dict[str, Any]: {"status": "success"|"error", "data": [gds_results]|error_message}
     """
-    # TODO: Implement actual GDS logic using neo4j_tools helpers
+    if not driver:
+        return {"status": "error", "data": "Neo4j driver not initialized."}
     print(f"Executing wrapped_run_gds_cypher(query='{query}', params={params}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
-    # Example call structure:
-    # return await neo4j_tools.run_cypher(query, params, db=db, impersonate=db_impersonate, timeout_ms=timeout_ms, access_mode="WRITE") # GDS often needs WRITE
-    return {"status": "success", "data": [{"nodeCount": 1000, "ranIterations": 20}]} # Placeholder
-
-# Import neo4j_tools at the end to avoid circular dependency if neo4j_tools needs types from here
-# import neo4j_tools
+    # GDS almost always requires WRITE access, even for read-like projections if they materialize graphs
+    return await neo4j_tools.run_cypher(
+        driver=driver,
+        query=query,
+        params=params,
+        db=db,
+        impersonate=db_impersonate,
+        timeout_ms=timeout_ms,
+        access_mode="WRITE"
+    )

@@ -3,19 +3,19 @@
 Contains heavy-lifting helpers for Neo4j interactions:
 - Timeout enforcement
 - Read/Write access mode guards
-- EXPLAIN plan checks (optional)
 - Parameter masking for logging
 - Centralized query execution logic
+- Schema fetching with APOC fallback
 """
 
 import asyncio
 import logging
 from typing import Dict, Any, Optional, List, Tuple
-# from neo4j import AsyncSession, Query, Result # Import later when driver is used
-# from neo4j.exceptions import ClientError
-
-# Placeholder for Neo4j driver (should be accessed via agent.py or similar)
-# driver = None
+from neo4j import (
+    AsyncSession, Query, Result, Summary, AsyncDriver,
+    READ_ACCESS, WRITE_ACCESS
+)
+from neo4j.exceptions import ClientError, ServiceUnavailable, AuthError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -27,26 +27,30 @@ def _mask_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Masks sensitive parameters for logging."""
     if not params:
         return {}
-    # Simple masking example, enhance as needed
     masked = {}
     for k, v in params.items():
-        if "password" in k.lower() or "token" in k.lower() or "secret" in k.lower():
+        # Mask common sensitive keys and values that look like tokens/keys
+        if any(sensitive in k.lower() for sensitive in ["password", "token", "secret", "apikey", "credential"]):
             masked[k] = "***MASKED***"
+        elif isinstance(v, str) and (v.startswith("sk-") or v.startswith("pk-") or len(v) > 40): # Basic check for API keys
+             masked[k] = "***MASKED***"
         else:
             masked[k] = v
     return masked
 
-async def _log_query(query: str, params: Optional[Dict[str, Any]], db: Optional[str], impersonate: Optional[str]):
+async def _log_query(query: str, params: Optional[Dict[str, Any]], db: Optional[str], impersonate: Optional[str], access_mode: str):
     """Logs query details with masked parameters."""
     log_params = _mask_params(params)
-    log_msg = f"Executing Cypher (db={db or 'default'}, impersonate={impersonate or 'None'}): Query='{query}', Params={log_params}"
+    log_msg = (f"Executing Cypher (db={db or 'default'}, impersonate={impersonate or 'None'}, mode={access_mode}): "
+               f"Query='{query}', Params={log_params}")
     logger.info(log_msg)
     # TODO: Add OpenTelemetry span creation here if needed
 
-async def _check_explain_plan(session, query: str, params: Optional[Dict[str, Any]]) -> bool:
+async def _check_explain_plan(session: AsyncSession, query: str, params: Optional[Dict[str, Any]]) -> bool:
     """
     (Optional) Runs EXPLAIN on the query to check for potentially harmful operations
     before execution. Return True if safe, False otherwise.
+    Currently a placeholder returning True.
     """
     # TODO: Implement EXPLAIN plan check logic if required.
     # This is complex and depends on specific rules (e.g., disallow full scans).
@@ -64,7 +68,7 @@ async def _check_explain_plan(session, query: str, params: Optional[Dict[str, An
     return True # Default to safe for now
 
 async def _execute_cypher_session(
-    session, # : AsyncSession,
+    session: AsyncSession,
     query: str,
     params: Optional[Dict[str, Any]],
     timeout_ms: int
@@ -72,27 +76,40 @@ async def _execute_cypher_session(
     """Executes a query within a session, handling timeout and results."""
     results_list = []
     summary_dict = {}
+    summary: Optional[Summary] = None
 
     try:
-        # Neo4j Python driver handles timeouts via configuration,
-        # but we can add an application-level asyncio timeout for stricter control.
-        result = await asyncio.wait_for(
+        # Neo4j Python driver uses transaction_timeout config, but we add an
+        # application-level asyncio timeout for overall request control.
+        # Note: session.run itself doesn't take a timeout directly in recent versions.
+        # Timeout needs to be configured on the transaction or session level if needed
+        # for the driver to manage it internally. The asyncio.wait_for here acts as
+        # a safeguard for the entire operation within the session context.
+        result: Result = await asyncio.wait_for(
             session.run(query, params),
             timeout=timeout_ms / 1000.0 # asyncio.wait_for uses seconds
-        ) # type: Result
+        )
 
+        # Eagerly fetch results to ensure query completion within timeout
         results_list = [record.data() async for record in result]
-        summary = await result.consume() # type: Summary
-        summary_dict = summary.counters.__dict__ # Get counters like nodes_created etc.
+        summary = await result.consume()
+        summary_dict = summary.counters.__dict__ if summary and summary.counters else {}
 
     except asyncio.TimeoutError:
         logger.error(f"Query timed out after {timeout_ms}ms: {query}")
+        # Attempt to cancel the query on the server? (Complex, often relies on transaction termination)
         raise TimeoutError(f"Query execution exceeded timeout of {timeout_ms}ms.")
-    # except ClientError as e:
-    #     logger.error(f"Neo4j ClientError: {e.message} (Code: {e.code}) for query: {query}")
-    #     raise # Re-raise client errors
+    except ClientError as e:
+        logger.error(f"Neo4j ClientError: {e.message} (Code: {e.code}) for query: {query}")
+        # Specific handling for read/write errors in wrong mode might be useful
+        if "Write operations are not allowed" in e.message:
+             raise PermissionError(f"Write operation attempted in read-only session: {query}") from e
+        raise # Re-raise client errors
+    except (ServiceUnavailable, AuthError) as e:
+         logger.error(f"Neo4j connection/auth error: {e}")
+         raise # Re-raise critical connection errors
     except Exception as e:
-        logger.error(f"Error executing Cypher query '{query}': {e}")
+        logger.error(f"Error executing Cypher query '{query}': {type(e).__name__}: {e}")
         raise # Re-raise other errors
 
     return results_list, summary_dict
@@ -101,102 +118,149 @@ async def _execute_cypher_session(
 # --- Public API used by agent.py wrappers ---
 
 async def get_schema(
+    driver: AsyncDriver,
     db: Optional[str] = None,
     impersonate: Optional[str] = None,
     timeout_ms: int = 15000
 ) -> Dict[str, Any]:
-    """Fetches schema, handling APOC fallback and errors."""
-    # TODO: Implement actual schema fetching logic
-    # 1. Try APOC: `CALL apoc.meta.data()`
-    # 2. If APOC fails or not present, fallback to:
-    #    `SHOW NODE LABELS`, `SHOW RELATIONSHIP TYPES`, `SHOW PROPERTY KEYS`
-    # 3. Format results consistently.
-    # 4. Use _execute_cypher_session for running queries.
-    await _log_query("SCHEMA FETCH", {}, db, impersonate)
-    # Placeholder implementation
-    try:
-        # Simulate fetching schema
-        await asyncio.sleep(0.1) # Simulate network delay
-        schema_data = ["Schema: (:Label1)-[:REL]->(:Label2 {prop: 'string'})"] # Example data
-        return {"status": "success", "data": schema_data}
-    except Exception as e:
-        logger.error(f"Failed to get schema (db={db}, impersonate={impersonate}): {e}")
-        return {"status": "error", "data": str(e)}
+    """Fetches schema, trying APOC first, then falling back to SHOW commands."""
+    await _log_query("SCHEMA FETCH", {}, db, impersonate, "READ")
+
+    session_params = {"database": db, "default_access_mode": READ_ACCESS}
+    if impersonate:
+        session_params["impersonated_user"] = impersonate
+
+    schema_info = "Schema information could not be retrieved."
+    status = "error"
+
+    async with driver.session(**session_params) as session:
+        try:
+            # 1. Try APOC
+            logger.info("Attempting schema fetch using APOC...")
+            apoc_query = "CALL apoc.meta.data() YIELD label, property, type, relationship, other RETURN *"
+            results, _ = await _execute_cypher_session(session, apoc_query, {}, timeout_ms)
+            # Basic formatting, could be more structured
+            schema_parts = []
+            for record in results:
+                schema_parts.append(f"Node: (:{record['label']} {{{record['property']}: {record['type']}}})")
+                if record.get('relationship') and record.get('other'):
+                     # Simplified representation, apoc.meta.data structure is complex
+                     other_labels = ', '.join(record['other'])
+                     schema_parts.append(f"Relationship: (:{record['label']})-[:{record['relationship']}]->(:{other_labels})")
+            if schema_parts:
+                 schema_info = "\n".join(list(set(schema_parts))) # Use set to remove duplicates from yield format
+                 status = "success"
+                 logger.info("Schema fetched successfully using APOC.")
+            else:
+                 logger.warning("APOC call succeeded but returned no schema data.")
+                 # Proceed to fallback
+
+        except ClientError as e:
+            if "Unknown function 'apoc.meta.data'" in str(e) or "NoSuchProcedureException" in str(e):
+                logger.warning("APOC not found or `apoc.meta.data` procedure unavailable. Falling back to SHOW commands.")
+                # Proceed to fallback
+            else:
+                logger.error(f"APOC schema fetch failed with unexpected ClientError: {e}")
+                schema_info = f"APOC Error: {e.message}"
+                # Don't proceed to fallback if it's a general error
+                return {"status": "error", "data": schema_info}
+        except TimeoutError as e:
+             logger.error(f"APOC schema fetch timed out: {e}")
+             return {"status": "error", "data": str(e)}
+        except Exception as e:
+            logger.error(f"APOC schema fetch failed with unexpected error: {e}")
+            schema_info = f"Unexpected APOC Error: {str(e)}"
+            # Don't proceed to fallback if it's a general error
+            return {"status": "error", "data": schema_info}
+
+        # 2. Fallback to SHOW commands if APOC failed or returned nothing
+        if status != "success":
+            logger.info("Attempting schema fetch using SHOW commands...")
+            try:
+                # Combine SHOW commands into a single conceptual fetch
+                # Note: Running multiple queries sequentially here. Consider parallel execution if performance critical.
+                labels_query = "SHOW NODE LABELS YIELD label RETURN collect(label) AS labels"
+                rels_query = "SHOW RELATIONSHIP TYPES YIELD relationshipType RETURN collect(relationshipType) AS rel_types"
+                props_query = "SHOW PROPERTY KEYS YIELD propertyKey RETURN collect(propertyKey) AS prop_keys" # Less useful without context
+
+                labels_res, _ = await _execute_cypher_session(session, labels_query, {}, timeout_ms)
+                rels_res, _ = await _execute_cypher_session(session, rels_query, {}, timeout_ms)
+                props_res, _ = await _execute_cypher_session(session, props_query, {}, timeout_ms)
+
+                labels = labels_res[0]['labels'] if labels_res else []
+                rel_types = rels_res[0]['rel_types'] if rels_res else []
+                prop_keys = props_res[0]['prop_keys'] if props_res else [] # All property keys in the DB
+
+                schema_info = (f"Node Labels: {labels}\n"
+                               f"Relationship Types: {rel_types}\n"
+                               f"Property Keys (All): {prop_keys}")
+                status = "success"
+                logger.info("Schema fetched successfully using SHOW commands.")
+
+            except (ClientError, TimeoutError, Exception) as e:
+                logger.error(f"Fallback schema fetch using SHOW commands failed: {e}")
+                schema_info = f"Fallback Schema Error: {str(e)}"
+                status = "error"
+
+    return {"status": status, "data": schema_info}
 
 
 async def run_cypher(
+    driver: AsyncDriver,
     query: str,
     params: Optional[Dict[str, Any]] = None,
     db: Optional[str] = None,
     impersonate: Optional[str] = None,
     timeout_ms: int = 15000,
     access_mode: str = "WRITE", # "READ" or "WRITE"
-    route_read: bool = False # Only relevant for READ access_mode
+    route_read: bool = False # Influences driver config, not directly used here post-init
 ) -> Dict[str, Any]:
     """
     Runs a Cypher query with specified access mode, timeout, and logging.
     Handles session creation and error reporting.
     """
-    # TODO: Get driver instance properly (e.g., from agent.py or a shared module)
-    # global driver
-    # if not driver:
-    #     return {"status": "error", "data": "Neo4j driver not initialized."}
-
-    await _log_query(query, params, db, impersonate)
+    await _log_query(query, params, db, impersonate, access_mode)
 
     session_params = {"database": db}
     if impersonate:
         session_params["impersonated_user"] = impersonate
+
+    neo4j_access_mode = WRITE_ACCESS
     if access_mode == "READ":
-        session_params["default_access_mode"] = "READ" # neo4j.READ_ACCESS
-        # Note: Routing is often configured at the driver level, but explicit
-        # session mode helps if driver uses mixed pools or for clarity.
-        # The `route_read` parameter passed to the wrapper might influence
-        # driver config or session choice if using separate read/write drivers.
-    else:
-         session_params["default_access_mode"] = "WRITE" # neo4j.WRITE_ACCESS
+        neo4j_access_mode = READ_ACCESS
+        # Note: Routing (`route_read`) is typically configured at the Driver level
+        # based on cluster topology awareness. Explicit routing hints per-session
+        # are less common in the Python driver compared to setting access mode.
+        # If using Enterprise Edition with read replicas, ensure the driver's
+        # routing table is up-to-date.
 
-    # Placeholder for session management
-    # async with driver.session(**session_params) as session:
+    session_params["default_access_mode"] = neo4j_access_mode
+
     try:
-        # Placeholder: Simulate session and execution
-        logger.info(f"Simulating session with params: {session_params}")
+        async with driver.session(**session_params) as session:
+            # 1. (Optional) EXPLAIN Plan Check - currently disabled placeholder
+            # if not await _check_explain_plan(session, query, params):
+            #     return {"status": "error", "data": "Query failed EXPLAIN plan safety check."}
 
-        # 0. (Optional) Read Guard for READ mode
-        if access_mode == "READ":
-            # Basic check - more robust checks might involve EXPLAIN
-            forbidden_keywords = ["CREATE", "MERGE", "SET", "DELETE", "REMOVE", "CALL GDS"] # Rough check
-            if any(keyword in query.upper() for keyword in forbidden_keywords):
-                 logger.error(f"Write operation attempted in READ mode: {query}")
-                 return {"status": "error", "data": f"Write operations forbidden in read tool/session. Query: {query}"}
+            # 2. Execute Query
+            results, summary = await _execute_cypher_session(session, query, params, timeout_ms)
 
-        # 1. (Optional) EXPLAIN Plan Check
-        # if not await _check_explain_plan(session, query, params):
-        #     return {"status": "error", "data": "Query failed EXPLAIN plan safety check."}
+            # Format response based on access mode (write includes summary)
+            if access_mode == "WRITE":
+                response_data = {"results": results, "summary": summary}
+            else: # READ mode
+                response_data = results
 
-        # 2. Execute Query
-        # results, summary = await _execute_cypher_session(session, query, params, timeout_ms)
-        # Simulate execution:
-        await asyncio.sleep(0.2) # Simulate query time
-        if "error" in query.lower(): raise ValueError("Simulated query error")
-        results = [{"result_key": "result_value"}] if "RETURN" in query.upper() else []
-        summary = {"nodes_created": 1} if "CREATE" in query.upper() else {}
+            return {"status": "success", "data": response_data}
 
-        # Format response based on access mode (write includes summary)
-        if access_mode == "WRITE":
-            response_data = {"results": results, "summary": summary}
-        else: # READ mode
-            response_data = results
-
-        return {"status": "success", "data": response_data}
-
+    except (PermissionError, ClientError) as e: # Catch specific write-in-read error or other client errors
+        return {"status": "error", "data": f"Neo4j Client Error: {str(e)}"}
     except TimeoutError as e:
         return {"status": "error", "data": str(e)}
-    # except ClientError as e:
-    #     return {"status": "error", "data": f"Neo4j Error: {e.message} (Code: {e.code})"}
+    except (ServiceUnavailable, AuthError) as e:
+         # Critical errors, might indicate config issues
+         logger.exception(f"Neo4j connection/auth error running Cypher (db={db}, impersonate={impersonate}): {query}")
+         return {"status": "error", "data": f"Neo4j Connection/Auth Error: {str(e)}"}
     except Exception as e:
         logger.exception(f"Unexpected error running Cypher (db={db}, impersonate={impersonate}): {query}")
-        return {"status": "error", "data": f"Unexpected error: {str(e)}"}
-    # finally:
-        # Session is automatically closed by `async with`
-        # print("Session closed (placeholder)")
+        return {"status": "error", "data": f"Unexpected error: {type(e).__name__}: {str(e)}"}
