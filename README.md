@@ -28,7 +28,7 @@ This repository provides a baseline structure and production-ready code for inte
 └─────────────────────────────┘
 ```
 
-- **Wrappers (`neo4j_tools.py`, `agent.py`)**: Centralize database interaction, error handling, security checks (read/write guards), and logging.
+- **Wrappers (`wrappers.py`, `neo4j_tools.py`)**: Centralize database interaction, error handling, security checks (read/write guards), and logging. `agent.py` handles driver initialization.
 - **FunctionTool Shim (`neo4j_adk_tools.py`)**: Makes each wrapper a first-class ADK tool, exposing only `query` and `params` (or no arguments) to the LLM.
 - **RBAC Factory (`rbac.py`)**: Controls which tools each agent role can access, preventing code duplication.
 
@@ -58,7 +58,7 @@ The separation of `read` and `write` tools, while seemingly adding complexity, i
 
 It's crucial to understand that this split **does not limit the complexity of the Cypher queries** you can execute. The underlying wrappers can handle complex queries involving `UNWIND`, sub-queries, `MERGE`, `CALL { GDS }`, etc. The only limitations are:
     - **Access Mode**: The `read` tool uses a read-only session, preventing mutations.
-    - **Timeouts**: Configurable timeouts (defaults in `agent.py`) prevent runaway queries.
+    - **Timeouts**: Configurable timeouts (defaults in `wrappers.py`) prevent runaway queries.
 
 ### Handling Mixed Read/Write Queries
 
@@ -80,7 +80,9 @@ neo4j_adk_project/
 ├─ .env.example                   # Environment variable template
 ├─ README.md                      # This file
 └─ src/
-   ├─ agent.py                    # DB bootstrap + core wrappers
+   ├─ __init__.py                 # Makes 'src' a package
+   ├─ agent.py                    # DB bootstrap logic
+   ├─ wrappers.py                 # Core Neo4j wrapper functions
    ├─ neo4j_tools.py              # Low-level Neo4j helpers
    ├─ neo4j_adk_tools.py          # ADK FunctionTool shims
    ├─ rbac.py                     # RBAC configuration and factory
@@ -108,29 +110,42 @@ neo4j_adk_project/
 4.  **Install Dependencies**:
     ```bash
     pip install -r requirements.txt
-    # You'll likely need: neo4j google-cloud-aiplatform google-generativeai python-dotenv pytest pytest-asyncio
     ```
 5.  **Configure Credentials**:
     ```bash
     cp .env.example .env
-    # Edit .env with your Neo4j URI, User, Password, and Database
+    # Edit .env with your Neo4j URI, User, Password
     # Also add GOOGLE_API_KEY if running the example with Gemini
     ```
 6.  **Run Example**:
     ```bash
     python -m src.app.run_example
-    # (Ensure you are in the neo4j_adk_project directory or adjust python path)
+    # (Ensure you are in the neo4j_adk_project directory)
     ```
     This will:
-    - Initialize the Neo4j driver (placeholder logic).
+    - Initialize the Neo4j driver.
     - Create 'explorer' and 'builder' agents using the RBAC factory.
     - Run sample queries demonstrating read/write access control.
-    - Shut down the driver.
+    - Shut down the driver. (Note: Requires Neo4j running and configured in `.env`)
+
+## Troubleshooting History (Debugging Notes)
+
+During development and testing, several issues were identified and resolved:
+
+1.  **`TypeError: 'async for' requires an object with __aiter__ method, got generator`**: Occurred in `run_example.py` because `runner.run()` (synchronous) was used inside an `async def` function instead of `runner.run_async()` (asynchronous).
+2.  **`ValueError: Session not found`**: The ADK `Runner` requires sessions to be explicitly created before use. Calls to `session_service.create_session(...)` were added in `run_example.py` before `run_query` is invoked for a new session ID.
+3.  **`AttributeError: 'Event' object has no attribute 'is_llm_response'`**: The event handling logic in `run_example.py` was using an incorrect method. It was updated to use the documented methods `event.get_function_calls()`, `event.get_function_responses()`, and `event.is_final_response()`.
+4.  **`Warning: neo4j_tools.py not found or has import errors`**: This was caused by multiple underlying issues:
+    *   **Missing `src/__init__.py`**: Prevented Python from treating `src` as a package, breaking relative imports. An empty `src/__init__.py` was created.
+    *   **Circular Dependency**: An import cycle existed between `agent.py`, `neo4j_adk_tools.py`, and `rbac.py`. Resolved by moving wrapper functions from `agent.py` to a new `src/wrappers.py` file.
+    *   **Incorrect `neo4j` Import**: `neo4j_tools.py` imported `Summary` instead of `ResultSummary`, incompatible with `neo4j` library version 5.x. This was corrected.
 
 ## Known Unknowns / TODO Hooks
 
-- **Cluster Routing Policy**: Implement logic if using read replicas (`route_read=True`).
-- **Impersonation Mapping**: Enhance mapping from external auth (e.g., JWT) to Neo4j users.
+- **Cluster Routing Policy**: Implement logic if using read replicas (`route_read=True` in `rbac.py`).
+- **Impersonation Mapping**: Enhance mapping from external auth (e.g., JWT) to Neo4j users (`impersonated_user` in `rbac.py`).
 - **Observability**: Integrate OpenTelemetry or other tracing within `neo4j_tools._log_query`.
 - **Schema Cache**: Consider Redis or similar if schema introspection becomes slow.
-- **Implementation Details**: Fill in TODOs in the code, especially actual Neo4j driver/LLM initialization and error handling in `agent.py` and `neo4j_tools.py`.
+- **LLM Initialization**: The example script currently uses a placeholder model name (`llm_model_name`). Uncomment and configure the `genai` sections in `run_example.py` (lines 49-57, 161) and ensure `GOOGLE_API_KEY` is set in `.env` to use a real LLM.
+- **Error Handling**: Further refinement of error handling within the wrappers and tools could be beneficial.
+- **EXPLAIN Plan Check**: The `_check_explain_plan` function in `neo4j_tools.py` is currently a placeholder.
