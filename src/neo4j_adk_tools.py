@@ -94,11 +94,12 @@ CypherWriteTool: FunctionTool = _ft_query_params(wrapped_write_neo4j_cypher)
 GdsTool: FunctionTool         = _ft_query_params(wrapped_run_gds_cypher)
 
 # Dictionary mapping capability names to the ADK Tool objects
+# Dictionary mapping capability names (expected by tests) to the ADK Tool objects
 ALL_ADK_TOOLS: Dict[str, BaseTool] = {
-    "schema": SchemaTool,
-    "read"  : CypherReadTool,
-    "write" : CypherWriteTool,
-    "gds"   : GdsTool,
+    "get_schema"        : SchemaTool,
+    "read_cypher"       : CypherReadTool,
+    "write_cypher"      : CypherWriteTool,
+    "run_gds_procedure" : GdsTool,
     # Add future tools here, following the appropriate pattern
     # e.g., if PageRankTool takes specific args like graph_name:
     # PageRankTool = _ft_pagerank_args(pagerank_generator)

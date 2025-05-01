@@ -1,0 +1,65 @@
+{
+  "timestamp": "2025-04-30T22:31:20.725959",
+  "challenges_run": 9,
+  "start_challenge": 1,
+  "end_challenge": 9,
+  "auto_fallback_enabled": true,
+  "challenge_results": [
+    {
+      "id": 1,
+      "name": "Schema Exploration",
+      "status": "success",
+      "score": 6
+    },
+    {
+      "id": 2,
+      "name": "Company Structure Creation",
+      "status": "partial",
+      "score": 1
+    },
+    {
+      "id": 3,
+      "name": "Basic Querying",
+      "status": "success",
+      "score": 6
+    },
+    {
+      "id": 4,
+      "name": "Relationship Navigation",
+      "status": "success",
+      "score": 5
+    },
+    {
+      "id": 5,
+      "name": "Data Enrichment",
+      "status": "partial",
+      "score": 1
+    },
+    {
+      "id": 6,
+      "name": "Graph Analytics Setup",
+      "status": "partial",
+      "score": 1
+    },
+    {
+      "id": 7,
+      "name": "Advanced Analytics",
+      "status": "success",
+      "score": 5
+    },
+    {
+      "id": 8,
+      "name": "Data Transformation",
+      "status": "partial",
+      "score": 1
+    },
+    {
+      "id": 9,
+      "name": "Final Integration",
+      "status": "success",
+      "score": 5
+    }
+  ],
+  "total_score": 31,
+  "max_possible_score": 90
+}

@@ -39,18 +39,19 @@ CAPABILITIES = ALL_ADK_TOOLS               # NEW: Assign the imported map
 Role = Literal["explorer", "auditor", "builder", "admin"]
 
 # Maps role names to a list of capability *names* they should have access to.
+# Maps role names to a list of capability *names* (matching keys in ALL_ADK_TOOLS)
 ROLE_CAPABILITIES: Dict[Role, List[str]] = {
     # read-only, no GDS
-    "explorer": ["schema", "read"],
+    "explorer": ["get_schema", "read_cypher"],
 
     # read + analytics but cannot mutate
-    "auditor" : ["schema", "read", "gds"],
+    "auditor" : ["get_schema", "read_cypher", "run_gds_procedure"],
 
     # full CRUD + analytics
-    "builder" : ["schema", "read", "write", "gds"],
+    "builder" : ["get_schema", "read_cypher", "write_cypher", "run_gds_procedure"],
 
     # identical to builder today, reserved for future super-powers
-    "admin"   : ["schema", "read", "write", "gds"],
+    "admin"   : ["get_schema", "read_cypher", "write_cypher", "run_gds_procedure"],
 
     # Example of adding a new role:
     # "writer_only": ["write"],

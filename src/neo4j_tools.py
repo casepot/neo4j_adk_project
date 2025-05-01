@@ -137,16 +137,20 @@ async def get_schema(
         try:
             # 1. Try APOC
             logger.info("Attempting schema fetch using APOC...")
-            apoc_query = "CALL apoc.meta.data() YIELD label, property, type, relationship, other RETURN *"
+            # Use fields commonly available in apoc.meta.data output
+            apoc_query = "CALL apoc.meta.data() YIELD label, property, type, rel, other RETURN *"
             results, _ = await _execute_cypher_session(session, apoc_query, {}, timeout_ms)
             # Basic formatting, could be more structured
             schema_parts = []
             for record in results:
-                schema_parts.append(f"Node: (:{record['label']} {{{record['property']}: {record['type']}}})")
-                if record.get('relationship') and record.get('other'):
+                # Add node info if label and property exist
+                if record.get('label') and record.get('property') and record.get('type'):
+                    schema_parts.append(f"Node: (:{record['label']} {{{record['property']}: {record['type']}}})")
+                # Add relationship info if rel and other exist
+                elif record.get('label') and record.get('rel') and record.get('other'):
                      # Simplified representation, apoc.meta.data structure is complex
-                     other_labels = ', '.join(record['other'])
-                     schema_parts.append(f"Relationship: (:{record['label']})-[:{record['relationship']}]->(:{other_labels})")
+                     other_labels = ', '.join(record['other']) if isinstance(record['other'], list) else str(record['other'])
+                     schema_parts.append(f"Relationship: (:{record['label']})-[:{record['rel']}]->(:{other_labels})")
             if schema_parts:
                  schema_info = "\n".join(list(set(schema_parts))) # Use set to remove duplicates from yield format
                  status = "success"
