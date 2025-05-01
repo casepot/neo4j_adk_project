@@ -1,0 +1,35 @@
+{
+  "timestamp": "2025-05-01T00:28:12.521812",
+  "challenges_run": 4,
+  "start_challenge": 1,
+  "end_challenge": 4,
+  "auto_fallback_enabled": true,
+  "challenge_results": [
+    {
+      "id": 1,
+      "name": "Schema Exploration",
+      "status": "success",
+      "score": 9
+    },
+    {
+      "id": 2,
+      "name": "Company Structure Creation",
+      "status": "partial",
+      "score": 6
+    },
+    {
+      "id": 3,
+      "name": "Basic Querying",
+      "status": "success",
+      "score": 10
+    },
+    {
+      "id": 4,
+      "name": "Relationship Navigation",
+      "status": "success",
+      "score": 10
+    }
+  ],
+  "total_score": 35,
+  "max_possible_score": 40
+}

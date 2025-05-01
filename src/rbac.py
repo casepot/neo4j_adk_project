@@ -113,7 +113,8 @@ def build_agent_tools(
         tool = CAPABILITIES[cap_name]
 
         # Check if we need to wrap this tool for impersonation or routing
-        needs_wrapper = impersonated_user or (read_routing and cap_name == "read")
+        # Fix typo: "read" -> "read_cypher"
+        needs_wrapper = impersonated_user or (read_routing and cap_name == "read_cypher")
 
         if needs_wrapper:
             # We need to wrap the original tool's execution logic.
@@ -145,18 +146,21 @@ def build_agent_tools(
 
             # Create a new async function that calls the original wrapper
             # with the added impersonation/routing kwargs.
-            async def _bound_runner(original_async_func=original_func, tool_ref=tool, *args, **kwargs):
+            # Fix closure capture bug: Add cap_name=cap_name as default arg
+            async def _bound_runner(*args, original_async_func=original_func, tool_ref=tool, cap_name=cap_name, **kwargs):
                 # The arguments passed here by ADK will be in 'kwargs' under the 'args' key.
-                inner_args = kwargs.get('args', {})
+                # ADK passes tool inputs directly as keyword arguments to the runner.
+                # We need to extract them from kwargs, excluding the 'tool_context' ADK adds.
+                inner_args = {k: v for k, v in kwargs.items() if k != 'tool_context'}
+
 
                 if impersonated_user:
-                    inner_args.setdefault("db_impersonate", impersonated_user)
+                    inner_args.setdefault("db_impersonate", impersonated_user) # Use the correct kwarg name from wrappers.py
 
                 # Check if this specific tool instance corresponds to the read tool
-                # This comparison is tricky. Comparing functions directly can be unreliable.
-                # Let's rely on the capability name check from before.
-                if read_routing and cap_name == "read":
-                    inner_args.setdefault("route_read", True)
+                # Fix typo: "read" -> "read_cypher"
+                if read_routing and cap_name == "read_cypher":
+                    inner_args.setdefault("route_read", True) # Use the correct kwarg name from wrappers.py
 
                 # Call the *original* async wrapper function (e.g., wrapped_read_...)
                 return await original_async_func(**inner_args)

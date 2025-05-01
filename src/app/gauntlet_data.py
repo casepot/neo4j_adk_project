@@ -40,24 +40,84 @@ COMPANY_SETUP_QUERIES = [
     CREATE (:Employee {name: 'Heidi Moore', title: 'Sales Representative', hire_date: '2022-07-15', salary: 75000, id: 'E008'})
     """,
     
-    # Create WORKS_IN relationships (Split into individual queries)
-    "MATCH (e:Employee {name: 'Alice Smith'}), (d:Department {name: 'Engineering'}) CREATE (e)-[:WORKS_IN {since: '2019-01-15'}]->(d)",
-    "MATCH (e:Employee {name: 'Bob Johnson'}), (d:Department {name: 'Engineering'}) CREATE (e)-[:WORKS_IN {since: '2020-03-01'}]->(d)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (d:Department {name: 'Engineering'}) CREATE (e)-[:WORKS_IN {since: '2021-05-10'}]->(d)",
-    "MATCH (e:Employee {name: 'Dave Brown'}), (d:Department {name: 'Engineering'}) CREATE (e)-[:WORKS_IN {since: '2022-09-01'}]->(d)",
-    "MATCH (e:Employee {name: 'Eve Davis'}), (d:Department {name: 'Marketing'}) CREATE (e)-[:WORKS_IN {since: '2021-02-15'}]->(d)",
-    "MATCH (e:Employee {name: 'Frank Miller'}), (d:Department {name: 'Sales'}) CREATE (e)-[:WORKS_IN {since: '2021-01-20'}]->(d)",
-    "MATCH (e:Employee {name: 'Grace Wilson'}), (d:Department {name: 'Human Resources'}) CREATE (e)-[:WORKS_IN {since: '2022-04-01'}]->(d)",
-    "MATCH (e:Employee {name: 'Heidi Moore'}), (d:Department {name: 'Sales'}) CREATE (e)-[:WORKS_IN {since: '2022-07-15'}]->(d)",
+    # Create WORKS_IN relationships (Use MERGE for idempotency and efficiency)
+    """
+    MATCH (e:Employee {name: 'Alice Smith'})
+    MATCH (d:Department {name: 'Engineering'})
+    MERGE (e)-[:WORKS_IN {since: '2019-01-15'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Bob Johnson'})
+    MATCH (d:Department {name: 'Engineering'})
+    MERGE (e)-[:WORKS_IN {since: '2020-03-01'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'})
+    MATCH (d:Department {name: 'Engineering'})
+    MERGE (e)-[:WORKS_IN {since: '2021-05-10'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Dave Brown'})
+    MATCH (d:Department {name: 'Engineering'})
+    MERGE (e)-[:WORKS_IN {since: '2022-09-01'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Eve Davis'})
+    MATCH (d:Department {name: 'Marketing'})
+    MERGE (e)-[:WORKS_IN {since: '2021-02-15'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Frank Miller'})
+    MATCH (d:Department {name: 'Sales'})
+    MERGE (e)-[:WORKS_IN {since: '2021-01-20'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Grace Wilson'})
+    MATCH (d:Department {name: 'Human Resources'})
+    MERGE (e)-[:WORKS_IN {since: '2022-04-01'}]->(d)
+    """,
+    """
+    MATCH (e:Employee {name: 'Heidi Moore'})
+    MATCH (d:Department {name: 'Sales'})
+    MERGE (e)-[:WORKS_IN {since: '2022-07-15'}]->(d)
+    """,
     
-    # Create REPORTS_TO relationships (Split into individual queries)
-    "MATCH (e1:Employee {name: 'Bob Johnson'}), (e2:Employee {name: 'Alice Smith'}) CREATE (e1)-[:REPORTS_TO {since: '2020-03-01'}]->(e2)",
-    "MATCH (e1:Employee {name: 'Carol Williams'}), (e2:Employee {name: 'Bob Johnson'}) CREATE (e1)-[:REPORTS_TO {since: '2021-05-10'}]->(e2)",
-    "MATCH (e1:Employee {name: 'Dave Brown'}), (e2:Employee {name: 'Carol Williams'}) CREATE (e1)-[:REPORTS_TO {since: '2022-09-01'}]->(e2)",
-    "MATCH (e1:Employee {name: 'Eve Davis'}), (e2:Employee {name: 'Alice Smith'}) CREATE (e1)-[:REPORTS_TO {since: '2021-02-15'}]->(e2)",
-    "MATCH (e1:Employee {name: 'Frank Miller'}), (e2:Employee {name: 'Alice Smith'}) CREATE (e1)-[:REPORTS_TO {since: '2021-01-20'}]->(e2)",
-    "MATCH (e1:Employee {name: 'Grace Wilson'}), (e2:Employee {name: 'Alice Smith'}) CREATE (e1)-[:REPORTS_TO {since: '2022-04-01'}]->(e2)",
-    "MATCH (e1:Employee {name: 'Heidi Moore'}), (e2:Employee {name: 'Frank Miller'}) CREATE (e1)-[:REPORTS_TO {since: '2022-07-15'}]->(e2)"
+    # Create REPORTS_TO relationships (Use MERGE for idempotency and efficiency)
+    """
+    MATCH (e1:Employee {name: 'Bob Johnson'})
+    MATCH (e2:Employee {name: 'Alice Smith'})
+    MERGE (e1)-[:REPORTS_TO {since: '2020-03-01'}]->(e2)
+    """,
+    """
+    MATCH (e1:Employee {name: 'Carol Williams'})
+    MATCH (e2:Employee {name: 'Bob Johnson'})
+    MERGE (e1)-[:REPORTS_TO {since: '2021-05-10'}]->(e2)
+    """,
+    """
+    MATCH (e1:Employee {name: 'Dave Brown'})
+    MATCH (e2:Employee {name: 'Carol Williams'})
+    MERGE (e1)-[:REPORTS_TO {since: '2022-09-01'}]->(e2)
+    """,
+    """
+    MATCH (e1:Employee {name: 'Eve Davis'})
+    MATCH (e2:Employee {name: 'Alice Smith'})
+    MERGE (e1)-[:REPORTS_TO {since: '2021-02-15'}]->(e2)
+    """,
+    """
+    MATCH (e1:Employee {name: 'Frank Miller'})
+    MATCH (e2:Employee {name: 'Alice Smith'})
+    MERGE (e1)-[:REPORTS_TO {since: '2021-01-20'}]->(e2)
+    """,
+    """
+    MATCH (e1:Employee {name: 'Grace Wilson'})
+    MATCH (e2:Employee {name: 'Alice Smith'})
+    MERGE (e1)-[:REPORTS_TO {since: '2022-04-01'}]->(e2)
+    """,
+    """
+    MATCH (e1:Employee {name: 'Heidi Moore'})
+    MATCH (e2:Employee {name: 'Frank Miller'})
+    MERGE (e1)-[:REPORTS_TO {since: '2022-07-15'}]->(e2)
+    """
 ]
 
 # --- Challenge 5: Data Enrichment Setup Queries ---
@@ -83,43 +143,139 @@ DATA_ENRICHMENT_QUERIES = [
     CREATE (:Skill {name: 'Cybersecurity', category: 'IT', demand: 'High'})
     """,
     
-    # Connect employees to projects with roles (Split into individual queries)
-    "MATCH (e:Employee {name: 'Alice Smith'}), (p:Project {name: 'Database Migration'}) CREATE (e)-[:WORKS_ON {role: 'Executive Sponsor', hoursPerWeek: 5}]->(p)",
-    "MATCH (e:Employee {name: 'Bob Johnson'}), (p:Project {name: 'Database Migration'}) CREATE (e)-[:WORKS_ON {role: 'Project Manager', hoursPerWeek: 20}]->(p)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (p:Project {name: 'Database Migration'}) CREATE (e)-[:WORKS_ON {role: 'Lead Developer', hoursPerWeek: 30}]->(p)",
-    "MATCH (e:Employee {name: 'Dave Brown'}), (p:Project {name: 'Database Migration'}) CREATE (e)-[:WORKS_ON {role: 'Developer', hoursPerWeek: 40}]->(p)",
-    "MATCH (e:Employee {name: 'Eve Davis'}), (p:Project {name: 'Website Redesign'}) CREATE (e)-[:WORKS_ON {role: 'Marketing Lead', hoursPerWeek: 25}]->(p)",
-    "MATCH (e:Employee {name: 'Alice Smith'}), (p:Project {name: 'Data Analytics Platform'}) CREATE (e)-[:WORKS_ON {role: 'Technical Advisor', hoursPerWeek: 10}]->(p)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (p:Project {name: 'Mobile App Development'}) CREATE (e)-[:WORKS_ON {role: 'Lead Developer', hoursPerWeek: 15}]->(p)",
-    "MATCH (e:Employee {name: 'Dave Brown'}), (p:Project {name: 'Mobile App Development'}) CREATE (e)-[:WORKS_ON {role: 'Developer', hoursPerWeek: 20}]->(p)",
-    "MATCH (e:Employee {name: 'Frank Miller'}), (p:Project {name: 'Data Analytics Platform'}) CREATE (e)-[:WORKS_ON {role: 'Business Sponsor', hoursPerWeek: 10}]->(p)",
+    # Connect employees to projects with roles (Use MERGE for idempotency and efficiency)
+    """
+    MATCH (e:Employee {name: 'Alice Smith'}) MATCH (p:Project {name: 'Database Migration'})
+    MERGE (e)-[:WORKS_ON {role: 'Executive Sponsor', hoursPerWeek: 5}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Bob Johnson'}) MATCH (p:Project {name: 'Database Migration'})
+    MERGE (e)-[:WORKS_ON {role: 'Project Manager', hoursPerWeek: 20}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'}) MATCH (p:Project {name: 'Database Migration'})
+    MERGE (e)-[:WORKS_ON {role: 'Lead Developer', hoursPerWeek: 30}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Dave Brown'}) MATCH (p:Project {name: 'Database Migration'})
+    MERGE (e)-[:WORKS_ON {role: 'Developer', hoursPerWeek: 40}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Eve Davis'}) MATCH (p:Project {name: 'Website Redesign'})
+    MERGE (e)-[:WORKS_ON {role: 'Marketing Lead', hoursPerWeek: 25}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Alice Smith'}) MATCH (p:Project {name: 'Data Analytics Platform'})
+    MERGE (e)-[:WORKS_ON {role: 'Technical Advisor', hoursPerWeek: 10}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'}) MATCH (p:Project {name: 'Mobile App Development'})
+    MERGE (e)-[:WORKS_ON {role: 'Lead Developer', hoursPerWeek: 15}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Dave Brown'}) MATCH (p:Project {name: 'Mobile App Development'})
+    MERGE (e)-[:WORKS_ON {role: 'Developer', hoursPerWeek: 20}]->(p)
+    """,
+    """
+    MATCH (e:Employee {name: 'Frank Miller'}) MATCH (p:Project {name: 'Data Analytics Platform'})
+    MERGE (e)-[:WORKS_ON {role: 'Business Sponsor', hoursPerWeek: 10}]->(p)
+    """,
     
-    # Connect employees to skills with proficiency (Split into individual queries)
-    "MATCH (e:Employee {name: 'Alice Smith'}), (s:Skill {name: 'Python'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 8}]->(s)",
-    "MATCH (e:Employee {name: 'Alice Smith'}), (s:Skill {name: 'Neo4j'}) CREATE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 5}]->(s)",
-    "MATCH (e:Employee {name: 'Alice Smith'}), (s:Skill {name: 'Project Management'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 10}]->(s)",
-    "MATCH (e:Employee {name: 'Bob Johnson'}), (s:Skill {name: 'Neo4j'}) CREATE (e)-[:HAS_SKILL {proficiency: 3, yearsExperience: 3}]->(s)",
-    "MATCH (e:Employee {name: 'Bob Johnson'}), (s:Skill {name: 'Project Management'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 7}]->(s)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (s:Skill {name: 'Python'}) CREATE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 6}]->(s)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (s:Skill {name: 'Neo4j'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 2}]->(s)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (s:Skill {name: 'Machine Learning'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 3}]->(s)",
-    "MATCH (e:Employee {name: 'Dave Brown'}), (s:Skill {name: 'Python'}) CREATE (e)-[:HAS_SKILL {proficiency: 3, yearsExperience: 2}]->(s)",
-    "MATCH (e:Employee {name: 'Dave Brown'}), (s:Skill {name: 'JavaScript'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 3}]->(s)",
-    "MATCH (e:Employee {name: 'Eve Davis'}), (s:Skill {name: 'Product Design'}) CREATE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 8}]->(s)",
-    "MATCH (e:Employee {name: 'Frank Miller'}), (s:Skill {name: 'Sales Negotiation'}) CREATE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 12}]->(s)",
-    "MATCH (e:Employee {name: 'Grace Wilson'}), (s:Skill {name: 'Project Management'}) CREATE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 6}]->(s)",
-    "MATCH (e:Employee {name: 'Heidi Moore'}), (s:Skill {name: 'Sales Negotiation'}) CREATE (e)-[:HAS_SKILL {proficiency: 3, yearsExperience: 3}]->(s)",
+    # Connect employees to skills with proficiency (Use MERGE for idempotency and efficiency)
+    """
+    MATCH (e:Employee {name: 'Alice Smith'}) MATCH (s:Skill {name: 'Python'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 8}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Alice Smith'}) MATCH (s:Skill {name: 'Neo4j'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 5}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Alice Smith'}) MATCH (s:Skill {name: 'Project Management'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 10}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Bob Johnson'}) MATCH (s:Skill {name: 'Neo4j'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 3, yearsExperience: 3}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Bob Johnson'}) MATCH (s:Skill {name: 'Project Management'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 7}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'}) MATCH (s:Skill {name: 'Python'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 6}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'}) MATCH (s:Skill {name: 'Neo4j'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 2}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'}) MATCH (s:Skill {name: 'Machine Learning'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 3}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Dave Brown'}) MATCH (s:Skill {name: 'Python'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 3, yearsExperience: 2}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Dave Brown'}) MATCH (s:Skill {name: 'JavaScript'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 3}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Eve Davis'}) MATCH (s:Skill {name: 'Product Design'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 8}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Frank Miller'}) MATCH (s:Skill {name: 'Sales Negotiation'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 5, yearsExperience: 12}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Grace Wilson'}) MATCH (s:Skill {name: 'Project Management'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 4, yearsExperience: 6}]->(s)
+    """,
+    """
+    MATCH (e:Employee {name: 'Heidi Moore'}) MATCH (s:Skill {name: 'Sales Negotiation'})
+    MERGE (e)-[:HAS_SKILL {proficiency: 3, yearsExperience: 3}]->(s)
+    """,
 
-    # Connect projects to skills (Split into individual queries)
-    "MATCH (p:Project {name: 'Database Migration'}), (s:Skill {name: 'Neo4j'}) CREATE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)",
-    "MATCH (p:Project {name: 'Database Migration'}), (s:Skill {name: 'Python'}) CREATE (p)-[:REQUIRES_SKILL {importance: 4}]->(s)",
-    "MATCH (p:Project {name: 'Website Redesign'}), (s:Skill {name: 'JavaScript'}) CREATE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)",
-    "MATCH (p:Project {name: 'Website Redesign'}), (s:Skill {name: 'Product Design'}) CREATE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)",
-    "MATCH (p:Project {name: 'Mobile App Development'}), (s:Skill {name: 'JavaScript'}) CREATE (p)-[:REQUIRES_SKILL {importance: 4}]->(s)",
-    "MATCH (p:Project {name: 'Mobile App Development'}), (s:Skill {name: 'Python'}) CREATE (p)-[:REQUIRES_SKILL {importance: 3}]->(s)",
-    "MATCH (p:Project {name: 'Security Audit'}), (s:Skill {name: 'Cybersecurity'}) CREATE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)",
-    "MATCH (p:Project {name: 'Data Analytics Platform'}), (s:Skill {name: 'Python'}) CREATE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)",
-    "MATCH (p:Project {name: 'Data Analytics Platform'}), (s:Skill {name: 'Machine Learning'}) CREATE (p)-[:REQUIRES_SKILL {importance: 4}]->(s)"
+    # Connect projects to skills (Use MERGE for idempotency and efficiency)
+    """
+    MATCH (p:Project {name: 'Database Migration'}) MATCH (s:Skill {name: 'Neo4j'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Database Migration'}) MATCH (s:Skill {name: 'Python'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 4}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Website Redesign'}) MATCH (s:Skill {name: 'JavaScript'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Website Redesign'}) MATCH (s:Skill {name: 'Product Design'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Mobile App Development'}) MATCH (s:Skill {name: 'JavaScript'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 4}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Mobile App Development'}) MATCH (s:Skill {name: 'Python'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 3}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Security Audit'}) MATCH (s:Skill {name: 'Cybersecurity'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Data Analytics Platform'}) MATCH (s:Skill {name: 'Python'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 5}]->(s)
+    """,
+    """
+    MATCH (p:Project {name: 'Data Analytics Platform'}) MATCH (s:Skill {name: 'Machine Learning'})
+    MERGE (p)-[:REQUIRES_SKILL {importance: 4}]->(s)
+    """
 ]
 
 # --- Challenge 6: Graph Analytics Setup Queries ---
@@ -165,18 +321,45 @@ TRANSFORMATION_SETUP_QUERIES = [
     CREATE (:Team {name: 'Business Solutions Team', focus: 'Sales and Analytics'})
     """,
     
-    # Add team leaders (Split into individual queries)
-    "MATCH (e:Employee {name: 'Bob Johnson'}) SET e:TeamLead",
-    "MATCH (e:Employee {name: 'Eve Davis'}) SET e:TeamLead",
-    "MATCH (e:Employee {name: 'Frank Miller'}) SET e:TeamLead",
+    # Add team leaders (Use MERGE for idempotency)
+    """
+    MATCH (e:Employee {name: 'Bob Johnson'})
+    SET e:TeamLead
+    """,
+    """
+    MATCH (e:Employee {name: 'Eve Davis'})
+    SET e:TeamLead
+    """,
+    """
+    MATCH (e:Employee {name: 'Frank Miller'})
+    SET e:TeamLead
+    """,
     
-    # Connect employees to teams (Split into individual queries)
-    "MATCH (e:Employee {name: 'Bob Johnson'}), (t:Team {name: 'Core Engineering Team'}) CREATE (e)-[:LEADS]->(t)",
-    "MATCH (e:Employee {name: 'Carol Williams'}), (t:Team {name: 'Core Engineering Team'}) CREATE (e)-[:MEMBER_OF]->(t)",
-    "MATCH (e:Employee {name: 'Dave Brown'}), (t:Team {name: 'Core Engineering Team'}) CREATE (e)-[:MEMBER_OF]->(t)",
-    "MATCH (e:Employee {name: 'Eve Davis'}), (t:Team {name: 'Frontend Team'}) CREATE (e)-[:LEADS]->(t)",
-    "MATCH (e:Employee {name: 'Frank Miller'}), (t:Team {name: 'Business Solutions Team'}) CREATE (e)-[:LEADS]->(t)",
-    "MATCH (e:Employee {name: 'Heidi Moore'}), (t:Team {name: 'Business Solutions Team'}) CREATE (e)-[:MEMBER_OF]->(t)"
+    # Connect employees to teams (Use MERGE for idempotency and efficiency)
+    """
+    MATCH (e:Employee {name: 'Bob Johnson'}) MATCH (t:Team {name: 'Core Engineering Team'})
+    MERGE (e)-[:LEADS]->(t)
+    """,
+    """
+    MATCH (e:Employee {name: 'Carol Williams'}) MATCH (t:Team {name: 'Core Engineering Team'})
+    MERGE (e)-[:MEMBER_OF]->(t)
+    """,
+    """
+    MATCH (e:Employee {name: 'Dave Brown'}) MATCH (t:Team {name: 'Core Engineering Team'})
+    MERGE (e)-[:MEMBER_OF]->(t)
+    """,
+    """
+    MATCH (e:Employee {name: 'Eve Davis'}) MATCH (t:Team {name: 'Frontend Team'})
+    MERGE (e)-[:LEADS]->(t)
+    """,
+    """
+    MATCH (e:Employee {name: 'Frank Miller'}) MATCH (t:Team {name: 'Business Solutions Team'})
+    MERGE (e)-[:LEADS]->(t)
+    """,
+    """
+    MATCH (e:Employee {name: 'Heidi Moore'}) MATCH (t:Team {name: 'Business Solutions Team'})
+    MERGE (e)-[:MEMBER_OF]->(t)
+    """
 ]
 
 # --- Verification Queries by Challenge ---
@@ -401,23 +584,25 @@ class GauntletData:
         """
         print("Resetting database for Neo4j Gauntlet...")
         
-        # 1. Check if GDS graph projection exists and drop it
-        check_gds_query = "CALL gds.graph.exists('company-graph') YIELD exists"
-        drop_gds_query = "CALL gds.graph.drop('company-graph') YIELD graphName"
+        # 1. Drop GDS graph projection if it exists (idempotent way)
+        # Using gds.graph.drop with failIfMissing: false (available GDS 2.1+)
+        # If using older GDS, keep the check_gds_query logic.
+        graph_name = 'company-graph'
+        drop_gds_query = "CALL gds.graph.drop($graph_name, false) YIELD graphName" # Use failIfMissing: false
         
         try:
-            check_result = await direct_cypher(check_gds_query, {}, write_mode=False)
-            if check_result["status"] == "success" and check_result["data"] and check_result["data"][0].get("exists"):
-                print("Found existing GDS graph 'company-graph'. Dropping...")
-                drop_result = await direct_cypher(drop_gds_query, {}, write_mode=True)
-                if drop_result["status"] == "success":
-                    print("GDS graph 'company-graph' dropped successfully.")
-                else:
-                    # Log error but proceed with main DB clear
-                    print(f"Warning: Failed to drop GDS graph 'company-graph': {drop_result.get('data')}")
-            elif check_result["status"] != "success":
-                 # Log error but proceed with main DB clear
-                 print(f"Warning: Failed to check for GDS graph 'company-graph': {check_result.get('data')}")
+            print(f"Attempting to drop GDS graph '{graph_name}' if it exists...")
+            drop_result = await direct_cypher(drop_gds_query, {"graph_name": graph_name}, write_mode=True)
+            # Check status, but don't error out if drop failed because it didn't exist (failIfMissing=false handles this)
+            if drop_result["status"] == "success":
+                 # Check if graphName was actually returned (meaning it existed and was dropped)
+                 if drop_result.get("data") and drop_result["data"][0].get("graphName") == graph_name:
+                     print(f"GDS graph '{graph_name}' dropped successfully.")
+                 else:
+                     print(f"GDS graph '{graph_name}' did not exist or drop call returned unexpected data.")
+            else:
+                 # Log error but proceed with main DB clear, as drop failure might be due to other reasons
+                 print(f"Warning: Attempt to drop GDS graph '{graph_name}' failed or reported error: {drop_result.get('data')}")
         except Exception as e:
              # Log error but proceed with main DB clear
              print(f"Warning: Exception during GDS graph check/drop: {e}")
@@ -428,18 +613,41 @@ class GauntletData:
         DETACH DELETE n
         """
         delete_result = await direct_cypher(delete_query, {}, write_mode=True)
-        
+
+        # Log the summary counters from the delete operation
+        summary = delete_result.get("data", {}).get("summary", {})
+        print(f"DETACH DELETE summary: {summary}")
+
         if delete_result["status"] != "success":
             return {
                 "status": "error",
-                "data": f"Error clearing main database: {delete_result.get('data', 'Unknown error')}"
+                "data": f"Error executing DETACH DELETE query: {delete_result.get('data', 'Unknown error')}"
             }
-        
-        print("Main database cleared successfully.")
-        return {
-            "status": "success",
-            "data": "Database reset successful"
-        }
+
+        # Explicitly verify the database is empty *after* deletion attempt
+        verify_query = "MATCH (n) RETURN count(n) as nodeCount"
+        verify_result = await direct_cypher(verify_query, {}, write_mode=False)
+
+        if verify_result["status"] == "success":
+            node_count = verify_result.get("data", [{}])[0].get("nodeCount", -1)
+            if node_count == 0:
+                print("Database successfully verified empty after reset.")
+                return {
+                    "status": "success",
+                    "data": "Database reset successful and verified empty."
+                }
+            else:
+                print(f"ERROR: Database reset failed verification. Found {node_count} nodes remaining.")
+                return {
+                    "status": "error",
+                    "data": f"Database reset failed verification. Found {node_count} nodes remaining."
+                }
+        else:
+            print(f"ERROR: Could not verify database emptiness after reset. Verification query failed: {verify_result.get('data')}")
+            return {
+                "status": "error",
+                "data": f"Could not verify database emptiness after reset: {verify_result.get('data')}"
+            }
     
     async def verify_challenge(self, challenge_id: int, direct_cypher: DirectCypherFunc) -> Tuple[bool, List[str]]:
         """
@@ -641,12 +849,29 @@ class GauntletData:
             if not success:
                 return False
         
-        # Now set up GDS analytics
+        # Now set up GDS analytics (make idempotent)
+        graph_name = 'company-graph'
         try:
+            # Check if graph exists and drop if it does
+            check_gds_query = "CALL gds.graph.exists($graph_name) YIELD exists"
+            drop_gds_query = "CALL gds.graph.drop($graph_name, false) YIELD graphName"
+
+            check_result = await direct_cypher(check_gds_query, {"graph_name": graph_name}, write_mode=False)
+            if check_result["status"] == "success" and check_result["data"] and check_result["data"][0].get("exists"):
+                print(f"Found existing GDS graph '{graph_name}' during analytics setup. Dropping...")
+                drop_result = await direct_cypher(drop_gds_query, {"graph_name": graph_name}, write_mode=True)
+                if drop_result["status"] != "success":
+                     print(f"Warning: Failed to drop existing GDS graph '{graph_name}' before projection: {drop_result.get('data')}")
+                     # Decide whether to proceed or fail based on severity
+                     # return False # Option: Fail hard if drop fails
+
+            # Proceed with setup queries (projection, centrality etc.)
             for query in ANALYTICS_SETUP_QUERIES:
-                result = await direct_cypher(query, {}, write_mode=True)
+                # Parameterize graph name if necessary in the queries themselves
+                params = {"graph_name": graph_name} if "$graph_name" in query else {}
+                result = await direct_cypher(query, params, write_mode=True)
                 if result["status"] != "success":
-                    print(f"Error setting up analytics: {result.get('data')}")
+                    print(f"Error setting up analytics step ('{query[:50]}...'): {result.get('data')}")
                     return False
         except Exception as e:
             print(f"Exception during GDS setup: {e}")

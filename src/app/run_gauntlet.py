@@ -119,6 +119,37 @@ async def verify_database_state(challenge_id: int) -> Tuple[bool, List[str]]:
     except Exception as e:
         return False, [f"Error during verification: {str(e)}"]
 
+# --- Session Purge Helper ---
+async def _purge_sessions_if_needed():
+    """Hard-reset the in-memory session store (ADK lacks clear_sessions())."""
+    if session_service and hasattr(session_service, 'list_sessions') and hasattr(session_service, 'delete_session'):
+        print("Purging existing sessions from InMemorySessionService...")
+        try:
+            # list_sessions might not return an object with a 'sessions' attribute directly
+            # Adapt based on actual InMemorySessionService structure if needed
+            # Pass the required app_name and user_id arguments
+            session_list = session_service.list_sessions(app_name=APP_NAME, user_id=USER_ID)
+            # Assuming session_list is iterable or has a 'sessions' attribute
+            sessions_to_delete = getattr(session_list, 'sessions', []) if session_list else []
+
+            if not sessions_to_delete and isinstance(session_list, list): # Handle if list_sessions returns a list
+                 sessions_to_delete = session_list
+
+            deleted_count = 0
+            for s in sessions_to_delete:
+                 # Check if 's' has the required attributes
+                 if hasattr(s, 'app_name') and hasattr(s, 'user_id') and hasattr(s, 'session_id'):
+                     session_service.delete_session(s.app_name, s.user_id, s.session_id)
+                     deleted_count += 1
+                 else:
+                     print(f"Warning: Skipping session object without expected attributes: {s}")
+            print(f"Purged {deleted_count} sessions.")
+        except Exception as e:
+            print(f"Warning: Failed to purge sessions: {e}")
+    elif not session_service:
+         print("Session service not available, skipping purge.")
+    else:
+         print("Session service does not support list_sessions/delete_session, skipping purge.")
 # --- Agent Creation Function ---
 def create_agent(role: Role, model: Any) -> Agent:
     """Creates an ADK Agent with tools based on the specified role."""
@@ -135,26 +166,82 @@ def create_agent(role: Role, model: Any) -> Agent:
         "explorer": """You are a Neo4j Graph Explorer assistant.
 You can query database schema and read data, but cannot make any changes.
 Think step-by-step to explore the graph structure and retrieve information.
-Be precise and thorough in your explanations of what you find.""",
+Be precise and thorough in your explanations of what you find.
+
+**DEBUGGING FAILED QUERIES:** If a query fails or returns unexpected empty results using `read_cypher` or `run_gds_procedure`, retry it **at most once**. If it fails again, **DO NOT** retry the exact same query repeatedly. Instead, formulate simpler diagnostic queries to isolate the problem. For example, if a query matching `(a)-[r]->(b)` fails, first try querying `MATCH (a) RETURN count(a)`, then `MATCH (b) RETURN count(b)`, then `MATCH ()-[r]->() RETURN count(r)` to see which element might be missing or incorrect. Break down the problem.
+
+**SCHEMA TOOL FALLBACK:** If the primary schema tool (`get_schema`) fails or returns an error (e.g., related to APOC procedures), you can attempt to retrieve basic schema information as a fallback. Use the `read_cypher` tool to run separate queries like `CALL db.labels()`, `CALL db.relationshipTypes()`, and `CALL db.schema.nodeTypeProperties()`. Report the results from these commands.""",
 
         "auditor": """You are a Neo4j Graph Analytics assistant.
 You can query the schema, read data, and run GDS analytics procedures.
 You cannot make direct changes to the graph structure.
 Focus on extracting insights through analytics and communicating them clearly.
-Think step-by-step when designing analytics approaches.""",
+Think step-by-step when designing analytics approaches.
+
+**GDS Usage Notes (GDS 2.x Syntax):**
+- Always use `CALL ... YIELD ...` to retrieve results from GDS procedures. Check the GDS documentation for the correct procedure name and YIELD fields for your version.
+- **Examples (GDS 2.x):**
+  - Degree: `CALL gds.degree.stream('myGraph') YIELD nodeId, score`
+  - Louvain: `CALL gds.louvain.stream('myGraph') YIELD nodeId, communityId, intermediateCommunityIds`
+  - Node Similarity: `CALL gds.nodeSimilarity.stream('myGraph') YIELD node1, node2, similarity`
+  - Dijkstra: `CALL gds.shortestPath.dijkstra.stream('myGraph', {sourceNode: $startNodeId, targetNode: $endNodeId}) YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path`
+- Ensure the in-memory graph exists before running algorithms. Use the graph projection tool (`run_gds_cypher` with `gds.graph.project` or `gds.graph.project.cypher`). If a graph name might already be in use, consider dropping it first (`gds.graph.drop`) to avoid errors.
+- Complete all required steps (e.g., project the graph, run the analysis, and return the answer).
+
+**DEBUGGING FAILED QUERIES:** If a query fails or returns unexpected empty results using `read_cypher` or `run_gds_procedure`, retry it **at most once**. If it fails again, **DO NOT** retry the exact same query repeatedly. Instead, formulate simpler diagnostic queries to isolate the problem. For example, if a query matching `(a)-[r]->(b)` fails, first try querying `MATCH (a) RETURN count(a)`, then `MATCH (b) RETURN count(b)`, then `MATCH ()-[r]->() RETURN count(r)` to see which element might be missing or incorrect. Break down the problem.
+
+**SCHEMA TOOL FALLBACK:** If the primary schema tool (`get_schema`) fails or returns an error (e.g., related to APOC procedures), you can attempt to retrieve basic schema information as a fallback. Use the `read_cypher` tool to run separate queries like `CALL db.labels()`, `CALL db.relationshipTypes()`, and `CALL db.schema.nodeTypeProperties()`. Report the results from these commands.""",
 
         "builder": """You are a Neo4j Graph Builder assistant.
 You can read, write, and modify the database, including creating new nodes and relationships.
 Follow data modeling best practices when designing graph structures.
 Think step-by-step when implementing database changes.
-Verify your changes after making them.""",
+Verify your changes after making them.
+
+**Cypher Best Practices:**
+- **Use MERGE for Uniqueness:** When creating nodes that should be unique based on a property (like name, email, ID), **strongly prefer `MERGE` over `CREATE`**. This prevents accidental duplicates if the node already exists. Use `ON CREATE SET` and `ON MATCH SET` to handle properties appropriately. Example: `MERGE (u:User {email: $email}) ON CREATE SET u.created = timestamp(), u.name = $name ON MATCH SET u.last_seen = timestamp() RETURN u`.
+- **Separate Read/Write with WITH:** When combining read and write operations in a single query (e.g., `MERGE` then `MATCH`), **always use a `WITH` clause** to separate them. Example: `MERGE (n:Node {id: 1}) WITH n MATCH (n)-[r]->(m) RETURN m`.
+- **Avoid Disconnected MATCH:** Avoid writing queries with disconnected `MATCH` patterns as they can lead to cartesian products and slow performance. Always connect `MATCH` patterns through relationships or use separate `MATCH` clauses. Bad: `MATCH (a:TypeA {id:1}), (b:TypeB {id:2}) CREATE (a)-[:REL]->(b)`. Good: `MATCH (a:TypeA {id:1}) MATCH (b:TypeB {id:2}) CREATE (a)-[:REL]->(b)`.
+- **Use UNWIND for Batching:** For creating multiple distinct nodes/relationships *of the same type*, prefer using `UNWIND` with a list parameter over many separate `CREATE` statements within a single query for better performance. Example: `UNWIND $listOfUsers AS userData MERGE (u:User {id: userData.id}) SET u += userData`.
+- **Separate Conceptual Operations:** Each distinct conceptual operation (e.g., creating one type of node, creating one type of relationship) should generally be performed in a separate `write_cypher` tool call. Do not bundle unrelated `CREATE` or `MERGE` statements separated by semicolons into a single query string.
+
+**CRITICAL WRITE VERIFICATION:** After executing a write query (e.g., using `write_cypher`), always inspect the `summary` field in the tool's response. If the `status` is 'success' but the `summary` is empty or shows zero nodes/relationships created/modified when you expected changes, **treat this as a potential silent failure.** Do not assume the write was successful. **Furthermore, if the summary counters (e.g., `relationships_created`) are much higher than expected for a single operation, it likely indicates duplicate nodes were matched. Verify node uniqueness before proceeding.** You MUST attempt to verify the write by using `read_cypher` to query the data you intended to create/modify *before* proceeding with subsequent steps that depend on that data. If verification fails, report the discrepancy.
+
+**DEBUGGING FAILED QUERIES:** If a query fails or returns unexpected empty results using `read_cypher` or `run_gds_procedure`, retry it **at most once**. If it fails again, **DO NOT** retry the exact same query repeatedly. Instead, formulate simpler diagnostic queries to isolate the problem. For example, if a query matching `(a)-[r]->(b)` fails, first try querying `MATCH (a) RETURN count(a)`, then `MATCH (b) RETURN count(b)`, then `MATCH ()-[r]->() RETURN count(r)` to see which element might be missing or incorrect. Break down the problem.""",
 
         "admin": """You are a Neo4j Database Administrator assistant.
 You have full access to read, write, and analyze the Neo4j database.
 You can solve complex problems requiring all aspects of database management.
 Think step-by-step through problems that might require multiple database operations.
-Always validate your work by checking the results of your operations.""",
+Always validate your work by checking the results of your operations.
+
+**GDS Usage Notes (GDS 2.x Syntax):**
+- Always use `CALL ... YIELD ...` to retrieve results from GDS procedures. Check the GDS documentation for the correct procedure name and YIELD fields for your version.
+- **Examples (GDS 2.x):**
+  - Degree: `CALL gds.degree.stream('myGraph') YIELD nodeId, score`
+  - Louvain: `CALL gds.louvain.stream('myGraph') YIELD nodeId, communityId, intermediateCommunityIds`
+  - Node Similarity: `CALL gds.nodeSimilarity.stream('myGraph') YIELD node1, node2, similarity`
+  - Dijkstra: `CALL gds.shortestPath.dijkstra.stream('myGraph', {sourceNode: $startNodeId, targetNode: $endNodeId}) YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path`
+- Ensure the in-memory graph exists before running algorithms. Use the graph projection tool (`run_gds_cypher` with `gds.graph.project` or `gds.graph.project.cypher`). If a graph name might already be in use, consider dropping it first (`gds.graph.drop`) to avoid errors.
+- Complete all required steps (e.g., project the graph, run the analysis, and return the answer).
+
+**Cypher Best Practices:**
+- **Use MERGE for Uniqueness:** When creating nodes that should be unique based on a property (like name, email, ID), **strongly prefer `MERGE` over `CREATE`**. This prevents accidental duplicates if the node already exists. Use `ON CREATE SET` and `ON MATCH SET` to handle properties appropriately. Example: `MERGE (u:User {email: $email}) ON CREATE SET u.created = timestamp(), u.name = $name ON MATCH SET u.last_seen = timestamp() RETURN u`.
+- **Separate Read/Write with WITH:** When combining read and write operations in a single query (e.g., `MERGE` then `MATCH`), **always use a `WITH` clause** to separate them. Example: `MERGE (n:Node {id: 1}) WITH n MATCH (n)-[r]->(m) RETURN m`.
+- **Avoid Disconnected MATCH:** Avoid writing queries with disconnected `MATCH` patterns as they can lead to cartesian products and slow performance. Always connect `MATCH` patterns through relationships or use separate `MATCH` clauses. Bad: `MATCH (a:TypeA {id:1}), (b:TypeB {id:2}) CREATE (a)-[:REL]->(b)`. Good: `MATCH (a:TypeA {id:1}) MATCH (b:TypeB {id:2}) CREATE (a)-[:REL]->(b)`.
+- **Use UNWIND for Batching:** For creating multiple distinct nodes/relationships *of the same type*, prefer using `UNWIND` with a list parameter over many separate `CREATE` statements within a single query for better performance. Example: `UNWIND $listOfUsers AS userData MERGE (u:User {id: userData.id}) SET u += userData`.
+- **Separate Conceptual Operations:** Each distinct conceptual operation (e.g., creating one type of node, creating one type of relationship) should generally be performed in a separate `write_cypher` tool call. Do not bundle unrelated `CREATE` or `MERGE` statements separated by semicolons into a single query string.
+
+**CRITICAL WRITE VERIFICATION:** After executing a write query (e.g., using `write_cypher`), always inspect the `summary` field in the tool's response. If the `status` is 'success' but the `summary` is empty or shows zero nodes/relationships created/modified when you expected changes (and it wasn't a GDS call expected to have zero counters), **treat this as a potential silent failure.** Do not assume the write was successful. **Furthermore, if the summary counters (e.g., `relationships_created`) are much higher than expected for a single operation, it likely indicates duplicate nodes were matched. Verify node uniqueness before proceeding.** You MUST attempt to verify the write by using `read_cypher` to query the data you intended to create/modify *before* proceeding with subsequent steps that depend on that data. If verification fails, report the discrepancy.
+
+**DEBUGGING FAILED QUERIES:** If a query fails or returns unexpected empty results using `read_cypher` or `run_gds_procedure`, retry it **at most once**. If it fails again, **DO NOT** retry the exact same query repeatedly. Instead, formulate simpler diagnostic queries to isolate the problem. For example, if a query matching `(a)-[r]->(b)` fails, first try querying `MATCH (a) RETURN count(a)`, then `MATCH (b) RETURN count(b)`, then `MATCH ()-[r]->() RETURN count(r)` to see which element might be missing or incorrect. Break down the problem.
+
+**SCHEMA TOOL FALLBACK:** If the primary schema tool (`get_schema`) fails or returns an error (e.g., related to APOC procedures), you can attempt to retrieve basic schema information as a fallback. Use the `read_cypher` tool to run separate queries like `CALL db.labels()`, `CALL db.relationshipTypes()`, and `CALL db.schema.nodeTypeProperties()`. Report the results from these commands.""",
     }
+    
+    # Remove redundant additions from previous steps if they exist
+    # (This ensures the base instructions are clean before potentially adding role-specific ones below if needed)
+    # No need to add separate instructions for builder, auditor, explorer as the base instructions cover the points now.
 
     agent = Agent(
         model=model,  # Pass the actual initialized model object here
@@ -276,7 +363,7 @@ CHALLENGES = [
         ],
         "setup_description": "Empty database",
         "expected_outcome": "A report confirming the database is empty or listing minimal schema",
-        "expected_tools": ["get_schema"],
+        "expected_tools": ["get_schema"], # Canonical name
         "expected_response_patterns": ["empty", "no node labels", "no relationship types", "schema is empty"]
     },
     {
@@ -301,7 +388,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Empty database",
         "expected_outcome": "A connected graph with departments, employees, and relationships",
-        "expected_tools": ["write_cypher"]
+        "expected_tools": ["write_cypher"] # Canonical name
     },
     {
         "id": 3,
@@ -321,7 +408,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Company structure with departments, employees, and relationships",
         "expected_outcome": "Accurate answers to all queries based on the existing data",
-        "expected_tools": ["read_cypher"],
+        "expected_tools": ["read_cypher"], # Canonical name
         "expected_response_patterns": ["department", "count", "manager", "hired", "engineering", "marketing", "sales"]
     },
     {
@@ -342,7 +429,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Company structure with hierarchy established",
         "expected_outcome": "Detailed analysis of the organizational hierarchy",
-        "expected_tools": ["read_cypher"]
+        "expected_tools": ["read_cypher"] # Canonical name
     },
     {
         "id": 5,
@@ -363,7 +450,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Company structure with departments and employees",
         "expected_outcome": "An enriched graph with projects, skills, and new relationship types",
-        "expected_tools": ["write_cypher"]
+        "expected_tools": ["write_cypher"] # Canonical name
     },
     {
         "id": 6,
@@ -383,7 +470,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Company graph with departments, employees, projects, and skills",
         "expected_outcome": "Analytics results identifying key employees in the organization",
-        "expected_tools": ["run_gds_procedure", "read_cypher"]
+        "expected_tools": ["run_gds_procedure", "read_cypher"] # Canonical names
     },
     {
         "id": 7,
@@ -403,7 +490,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Company graph with centrality scores",
         "expected_outcome": "Community groupings, similarity clusters, and collaboration recommendations",
-        "expected_tools": ["run_gds_procedure", "read_cypher"]
+        "expected_tools": ["run_gds_procedure", "read_cypher"] # Canonical names
     },
     {
         "id": 8,
@@ -424,7 +511,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Company graph with analytics results",
         "expected_outcome": "Transformed graph with new teams and collaboration structures",
-        "expected_tools": ["write_cypher", "read_cypher"]
+        "expected_tools": ["write_cypher", "read_cypher"] # Canonical names
     },
     {
         "id": 9,
@@ -446,7 +533,7 @@ Use realistic values for employee properties. Make sure at least one employee is
         ],
         "setup_description": "Optimized company graph with teams",
         "expected_outcome": "New projects with assigned teams and effectiveness analysis",
-        "expected_tools": ["read_cypher", "write_cypher", "run_gds_procedure", "get_schema"]
+        "expected_tools": ["read_cypher", "write_cypher", "run_gds_procedure", "get_schema"] # Canonical names
     }
 ]
 
@@ -545,26 +632,64 @@ async def run_challenge(
         score = 0 # No score if agent failed to respond
         evaluation_feedback.append(f"❌ Agent failed to respond or encountered an error: {result.get('error', 'Unknown')}")
         
-    # 2. Tool Usage Check
+    # 2. Tool Usage Check (Requires mapping reported runner names to canonical names)
     expected_tools = challenge.get("expected_tools", [])
     actual_tool_calls = result.get("tool_calls", [])
-    actual_tool_names = {call["name"] for call in actual_tool_calls}
-    
+
+    # --- BEGIN ADDITION: Reverse Tool Map ---
+    # Import the tools dictionary if not already available in scope
+    try:
+        from ..neo4j_adk_tools import ALL_ADK_TOOLS # Adjust import path if needed
+    except ImportError:
+        from src.neo4j_adk_tools import ALL_ADK_TOOLS # Fallback
+
+    # Create a reverse map: {reported_runner_name: canonical_name}
+    # Assumes call.name matches the FunctionTool's func.__name__ (e.g., 'get_schema_runner')
+    reverse_tool_map = {}
+    for canonical_name, tool_obj in ALL_ADK_TOOLS.items():
+         if hasattr(tool_obj, 'func') and hasattr(tool_obj.func, '__name__'):
+             reported_name = tool_obj.func.__name__ # e.g., 'get_schema_runner'
+             reverse_tool_map[reported_name] = canonical_name # e.g., 'get_schema'
+         # Add handling for other tool types if necessary (e.g., LongRunningFunctionTool)
+
+    # Map reported names to canonical names
+    actual_canonical_tool_names = set()
+    reported_tool_names_found = set()
+    for call in actual_tool_calls:
+        reported_name = call.get("name")
+        if reported_name:
+            reported_tool_names_found.add(reported_name)
+            canonical_name = reverse_tool_map.get(reported_name)
+            if canonical_name:
+                actual_canonical_tool_names.add(canonical_name)
+            else:
+                # If mapping fails, add the reported name itself for feedback
+                actual_canonical_tool_names.add(reported_name)
+                print(f"Warning: Could not map reported tool name '{reported_name}' to a canonical name.")
+    # --- END ADDITION ---
+
+
     used_expected_tool = False
     if expected_tools:
+        matched_canonical_tools = []
+        # Compare expected canonical names against the mapped canonical names
         for tool_name in expected_tools:
-            if tool_name in actual_tool_names:
+            if tool_name in actual_canonical_tool_names:
                 used_expected_tool = True
-                evaluation_feedback.append(f"✅ Used expected tool: {tool_name}")
-                break # Only need one match
-        if not used_expected_tool:
-            evaluation_feedback.append(f"❌ Did not use any expected tools: {expected_tools}. Used: {actual_tool_names or 'None'}")
-            score = max(0, score - 2) # Penalize for not using expected tools
-        else:
+                matched_canonical_tools.append(tool_name)
+                # Don't break, record all matches if multiple expected tools are used
+
+        if used_expected_tool:
+            # Provide more informative feedback including reported names
+            reported_names_for_matched = {r_name for r_name, c_name in reverse_tool_map.items() if c_name in matched_canonical_tools}
+            evaluation_feedback.append(f"✅ Used expected tool type(s): {matched_canonical_tools} (Reported as: {reported_names_for_matched or 'Unknown'})")
             score = min(10, score + 3) # Bonus for using expected tools
+        else:
+            evaluation_feedback.append(f"❌ Did not use any expected tool types: {expected_tools}. Used types: {actual_canonical_tool_names or 'None'} (Reported as: {reported_tool_names_found or 'None'})")
+            score = max(0, score - 2) # Penalize for not using expected tools
     else:
         evaluation_feedback.append("ℹ️ No specific tools expected for this challenge.")
-        
+
     # 3. Response Content Check (Simple Keyword/Pattern Matching)
     expected_patterns = challenge.get("expected_response_patterns", [])
     final_response_text = result.get("final_response", "").lower()
@@ -658,6 +783,8 @@ async def run_gauntlet(start_challenge: int = 1, end_challenge: int = 9, auto_fa
     
     # Initialize database connection
     await initialize_neo4j_driver()
+# Purge any existing sessions before starting the run
+    await _purge_sessions_if_needed()
     
     if not ADK_AVAILABLE:
         print("ADK components not loaded. Cannot run agent examples.")

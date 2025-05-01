@@ -78,6 +78,9 @@ async def _execute_cypher_session(
     summary_dict = {}
     summary: Optional[ResultSummary] = None # Changed Summary to ResultSummary
 
+    # Add DEBUG logging before execution
+    logger.debug(f"[Neo4j] ⇢ {query}  params={_mask_params(params)}")
+
     try:
         # Neo4j Python driver uses transaction_timeout config, but we add an
         # application-level asyncio timeout for overall request control.
@@ -94,6 +97,8 @@ async def _execute_cypher_session(
         results_list = [record.data() async for record in result]
         summary = await result.consume()
         summary_dict = summary.counters.__dict__ if summary and summary.counters else {}
+        # Add DEBUG logging after consume
+        logger.debug(f"[Neo4j] ⇠ counters={summary.counters}  plan={summary.plan if summary else None}")
 
     except asyncio.TimeoutError:
         logger.error(f"Query timed out after {timeout_ms}ms: {query}")
@@ -104,7 +109,12 @@ async def _execute_cypher_session(
         # Specific handling for read/write errors in wrong mode might be useful
         if "Write operations are not allowed" in e.message:
              raise PermissionError(f"Write operation attempted in read-only session: {query}") from e
-        raise # Re-raise client errors
+
+        # --- REMOVED GDS YIELD Auto-Retry Logic ---
+        # Let the original ClientError (e.g., Unknown procedure output) propagate
+        # back to the agent for better diagnosis. The agent should fix the YIELD clause.
+
+        raise # Re-raise original client error
     except (ServiceUnavailable, AuthError) as e:
          logger.error(f"Neo4j connection/auth error: {e}")
          raise # Re-raise critical connection errors
@@ -135,34 +145,90 @@ async def get_schema(
 
     async with driver.session(**session_params) as session:
         try:
-            # 1. Try APOC
-            logger.info("Attempting schema fetch using APOC...")
-            # Use fields commonly available in apoc.meta.data output
-            apoc_query = "CALL apoc.meta.data() YIELD label, property, type, rel, other RETURN *"
+            # 1. Try APOC using apoc.meta.schema()
+            logger.info("Attempting schema fetch using apoc.meta.schema()...")
+            apoc_query = "CALL apoc.meta.schema() YIELD value RETURN value" # Use recommended procedure
             results, _ = await _execute_cypher_session(session, apoc_query, {}, timeout_ms)
-            # Basic formatting, could be more structured
-            schema_parts = []
-            for record in results:
-                # Add node info if label and property exist
-                if record.get('label') and record.get('property') and record.get('type'):
-                    schema_parts.append(f"Node: (:{record['label']} {{{record['property']}: {record['type']}}})")
-                # Add relationship info if rel and other exist
-                elif record.get('label') and record.get('rel') and record.get('other'):
-                     # Simplified representation, apoc.meta.data structure is complex
-                     other_labels = ', '.join(record['other']) if isinstance(record['other'], list) else str(record['other'])
-                     schema_parts.append(f"Relationship: (:{record['label']})-[:{record['rel']}]->(:{other_labels})")
-            if schema_parts:
-                 schema_info = "\n".join(list(set(schema_parts))) # Use set to remove duplicates from yield format
-                 status = "success"
-                 logger.info("Schema fetched successfully using APOC.")
-            else:
-                 logger.warning("APOC call succeeded but returned no schema data.")
-                 # Proceed to fallback
+
+            if results and isinstance(results[0].get('value'), dict):
+                # Process the schema map returned by apoc.meta.schema()
+                schema_map = results[0]['value']
+                schema_parts = []
+                # Extract Node Labels and Properties
+                for label, data in schema_map.items():
+                    if data.get('type') == 'node':
+                        properties = ', '.join([f"{prop}: {details.get('type', 'UNKNOWN')}" for prop, details in data.get('properties', {}).items()])
+                        schema_parts.append(f"Node: (:{label} {{{properties}}})")
+
+                # Extract Relationship Types and Properties (More Robust Parsing from apoc.meta.schema)
+                rel_details = {} # Store details per relationship type {rel_type: {'properties': {prop: type}, 'connections': set((start_label, end_label))}}
+                
+                # First pass: Collect all relationship types and their properties from the schema map
+                for item_name, item_data in schema_map.items():
+                    # Relationships are described under node entries in apoc.meta.schema
+                    if item_data.get('type') == 'node':
+                        start_node_label = item_name # The key is the node label
+                        for rel_name, rel_info in item_data.get('relationships', {}).items():
+                            rel_type = rel_info.get('type')
+                            if not rel_type: continue
+                            
+                            # Initialize if first time seeing this rel_type
+                            if rel_type not in rel_details:
+                                rel_details[rel_type] = {'properties': {}, 'connections': set()}
+                                
+                            # Merge properties (take the union of properties seen across different connections)
+                            for prop, details in rel_info.get('properties', {}).items():
+                                if prop not in rel_details[rel_type]['properties']:
+                                    rel_details[rel_type]['properties'][prop] = details.get('type', 'UNKNOWN')
+                                    
+                            # Record connection pattern (start_label, end_label)
+                            # Note: apoc.meta.schema provides labels connected *to* the current node label
+                            end_node_labels = rel_info.get('labels', [])
+                            direction = rel_info.get('direction', 'out')
+                            
+                            for end_label in end_node_labels:
+                                if direction == 'out':
+                                    rel_details[rel_type]['connections'].add((start_node_label, end_label))
+                                elif direction == 'in':
+                                     rel_details[rel_type]['connections'].add((end_label, start_node_label))
+                                # Ignore 'both' direction for simplicity in this representation
+
+                # Format relationship schema parts
+                for rel_type, details in sorted(rel_details.items()):
+                     properties = ', '.join([f"{prop}: {ptype}" for prop, ptype in sorted(details['properties'].items())])
+                     # Show one example connection pattern like (:Start)-[:TYPE]->(:End)
+                     example_conn = next(iter(details['connections']), ('?', '?'))
+                     example_connection = f"(:{example_conn[0]})-[r:{rel_type}]->(:{example_conn[1]})"
+                     schema_parts.append(f"Relationship: {example_connection} {{{properties}}}")
+
+                # Check if we actually found relationship details via APOC
+                found_rels_via_apoc = any(part.startswith("Relationship:") for part in schema_parts)
+
+                if schema_parts and found_rels_via_apoc:
+                    # Combine node and relationship parts, then sort for consistent output
+                    combined_schema = sorted([part for part in schema_parts if part.startswith("Node:")]) + \
+                                      sorted([part for part in schema_parts if part.startswith("Relationship:")])
+                    schema_info = "\n".join(combined_schema)
+                    status = "success"
+                    logger.info("Schema fetched successfully using apoc.meta.schema() (including relationships).")
+                elif schema_parts and not found_rels_via_apoc:
+                     logger.warning("apoc.meta.schema() call succeeded and returned node data, but NO relationship data. Proceeding to fallback for relationships.")
+                     # Keep node data, but status remains 'error' to trigger fallback
+                     schema_info = "\n".join(sorted([part for part in schema_parts if part.startswith("Node:")]))
+                     # status remains 'error' to trigger fallback below
+                elif not schema_parts:
+                    logger.warning("apoc.meta.schema() call succeeded but returned no schema data at all.")
+                    # Proceed to fallback, status remains 'error'
+                # If schema_map wasn't a dict, status is already 'error'
+            else: # This case handles if results[0].get('value') was not a dict
+                 logger.warning("apoc.meta.schema() call did not return the expected dictionary structure.")
+                 # Proceed to fallback, status remains 'error'
 
         except ClientError as e:
-            if "Unknown function 'apoc.meta.data'" in str(e) or "NoSuchProcedureException" in str(e):
-                logger.warning("APOC not found or `apoc.meta.data` procedure unavailable. Falling back to SHOW commands.")
-                # Proceed to fallback
+            # Modify line 163 condition if needed:
+            if "Unknown function 'apoc.meta.schema'" in str(e) or "NoSuchProcedureException" in str(e):
+                 logger.warning("APOC not found or `apoc.meta.schema` procedure unavailable. Falling back to SHOW commands.")
+                 # Proceed to fallback
             else:
                 logger.error(f"APOC schema fetch failed with unexpected ClientError: {e}")
                 schema_info = f"APOC Error: {e.message}"
@@ -182,24 +248,46 @@ async def get_schema(
             logger.info("Attempting schema fetch using SHOW commands...")
             try:
                 # Combine SHOW commands into a single conceptual fetch
-                # Note: Running multiple queries sequentially here. Consider parallel execution if performance critical.
-                labels_query = "SHOW NODE LABELS YIELD label RETURN collect(label) AS labels"
-                rels_query = "SHOW RELATIONSHIP TYPES YIELD relationshipType RETURN collect(relationshipType) AS rel_types"
-                props_query = "SHOW PROPERTY KEYS YIELD propertyKey RETURN collect(propertyKey) AS prop_keys" # Less useful without context
+                # Note: Running multiple queries sequentially here.
+                # Use CALL db.* procedures which are generally more reliable than SHOW commands
+                labels_query = "CALL db.labels() YIELD label RETURN collect(label) AS labels"
+                rels_query = "CALL db.relationshipTypes() YIELD relationshipType RETURN collect(relationshipType) AS rel_types"
+                # Getting all property keys might be less useful than properties per type,
+                # but let's keep it simple for the fallback for now.
+                # A more detailed fallback could use CALL db.schema.nodeTypeProperties() etc.
+                props_query = "CALL db.propertyKeys() YIELD propertyKey RETURN collect(propertyKey) AS prop_keys"
 
                 labels_res, _ = await _execute_cypher_session(session, labels_query, {}, timeout_ms)
                 rels_res, _ = await _execute_cypher_session(session, rels_query, {}, timeout_ms)
                 props_res, _ = await _execute_cypher_session(session, props_query, {}, timeout_ms)
 
-                labels = labels_res[0]['labels'] if labels_res else []
-                rel_types = rels_res[0]['rel_types'] if rels_res else []
-                prop_keys = props_res[0]['prop_keys'] if props_res else [] # All property keys in the DB
+                # Extract results safely
+                labels = labels_res[0]['labels'] if labels_res and labels_res[0] and 'labels' in labels_res[0] else []
+                rel_types = rels_res[0]['rel_types'] if rels_res and rels_res[0] and 'rel_types' in rels_res[0] else []
+                prop_keys = props_res[0]['prop_keys'] if props_res and props_res[0] and 'prop_keys' in props_res[0] else []
 
-                schema_info = (f"Node Labels: {labels}\n"
-                               f"Relationship Types: {rel_types}\n"
-                               f"Property Keys (All): {prop_keys}")
-                status = "success"
-                logger.info("Schema fetched successfully using SHOW commands.")
+                # Combine the results into a user-friendly string
+                schema_parts = []
+                if labels:
+                    schema_parts.append(f"Node Labels: {sorted(labels)}")
+                if rel_types:
+                    schema_parts.append(f"Relationship Types: {sorted(rel_types)}")
+                if prop_keys:
+                     schema_parts.append(f"Property Keys (All): {sorted(prop_keys)}")
+
+                if schema_parts:
+                     # If APOC failed but returned partial node info, prepend it
+                     if isinstance(schema_info, str) and schema_info.startswith("Node:"):
+                          schema_info = schema_info + "\n" + "\n".join(schema_parts)
+                     else: # Otherwise, just use the fallback info
+                          schema_info = "\n".join(schema_parts)
+                     status = "success"
+                     logger.info("Schema fetched successfully using CALL db.* fallback procedures.")
+                else:
+                     # Fallback also failed to find anything
+                     logger.warning("Fallback schema fetch using CALL db.* returned no data.")
+                     schema_info = "Schema information could not be retrieved via APOC or fallback procedures."
+                     status = "error" # Keep status as error
 
             except (ClientError, TimeoutError, Exception) as e:
                 logger.error(f"Fallback schema fetch using SHOW commands failed: {e}")
@@ -223,6 +311,11 @@ async def run_cypher(
     Runs a Cypher query with specified access mode, timeout, and logging.
     Handles session creation and error reporting.
     """
+    # Add multi-statement guardrail
+    if ";" in query.strip().rstrip(";"):
+        logger.error(f"Multi-statement query detected and rejected: {query}")
+        return {"status": "error", "data": "Only one Cypher statement per call is allowed."}
+
     await _log_query(query, params, db, impersonate, access_mode)
 
     session_params = {"database": db}
@@ -250,14 +343,30 @@ async def run_cypher(
             results, summary = await _execute_cypher_session(session, query, params, timeout_ms)
 
             # Format response based on access mode (write includes summary)
+            is_gds_call = "CALL GDS." in query.upper()
             if access_mode == "WRITE":
+                # Refined assertion: Only treat zero counters as error for non-GDS, non-MERGE queries.
+                # MERGE returning zero counters is valid if the data already exists.
+                is_merge_query = "MERGE " in query.strip().upper() # Simple check for MERGE keyword
+                if not is_gds_call and not is_merge_query and not any(summary.values()):
+                    logger.warning(f"Non-GDS, non-MERGE write query succeeded but returned zero counters: {query}")
+                    # Still return error for non-MERGE writes with no changes (e.g., CREATE, SET, DELETE that match nothing)
+                    return {"status": "error",
+                            "data": "Write query succeeded but reported zero changes (counters are all zero)."}
+                elif not is_gds_call and is_merge_query and not any(summary.values()):
+                     logger.info(f"MERGE query succeeded with zero counters (data likely existed): {query}")
+                     # For MERGE, zero counters means success (data existed), so proceed.
+
+                # For GDS calls or successful writes/merges, return results and summary
                 response_data = {"results": results, "summary": summary}
             else: # READ mode
+                # Read mode (including GDS reads like .stream or .list) just returns results
                 response_data = results
 
             return {"status": "success", "data": response_data}
 
     except (PermissionError, ClientError) as e: # Catch specific write-in-read error or other client errors
+        logger.error(f"Neo4j Client Error during run_cypher: {e}")
         return {"status": "error", "data": f"Neo4j Client Error: {str(e)}"}
     except TimeoutError as e:
         return {"status": "error", "data": str(e)}

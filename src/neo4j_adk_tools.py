@@ -15,6 +15,17 @@ routing stay available but are *not* in the public signature.
 from typing import Optional, Dict, Any, Coroutine, Callable
 from google.adk.tools import FunctionTool, BaseTool
 
+# --- Pydantic Serialization Fix for Neo4j Temporal Types ---
+# Register a custom serializer for neo4j.time.DateTime to prevent errors
+# when ADK tries to serialize tool results containing these types.
+try:
+    from pydantic.json import ENCODERS_BY_TYPE
+    from neo4j.time import DateTime
+    ENCODERS_BY_TYPE[DateTime] = lambda dt: dt.iso_format()
+    print("Registered custom Pydantic serializer for neo4j.time.DateTime")
+except ImportError:
+    print("Warning: Could not import pydantic or neo4j.time; DateTime serialization fix not applied.")
+# --- End Pydantic Fix ---
 # Import the original async wrapper functions
 # Note: Ensure agent.py is structured correctly for these imports
 try:
@@ -56,8 +67,11 @@ def _ft_no_args(async_fn: AsyncWrapperFuncNoArgs) -> FunctionTool:
             # Consider logging this error
             return {"status": "error", "data": err_msg}
 
-    _runner.__name__ = getattr(async_fn, '__name__', '_unknown_adk_runner_no_args')
+    # Derive the tool name from the wrapped function, removing 'wrapped_' prefix
+    tool_name = getattr(async_fn, '__name__', '_unknown_adk_runner_no_args').replace('wrapped_', '')
+    _runner.__name__ = f"{tool_name}_runner" # Make runner name distinct for clarity
     _runner.__doc__  = getattr(async_fn, '__doc__', 'ADK Tool Runner (No Args)')
+    # Explicitly set the FunctionTool name for ADK stability
     return FunctionTool(func=_runner)
 
 
@@ -81,9 +95,12 @@ def _ft_query_params(async_fn: AsyncWrapperFuncQueryParams) -> FunctionTool:
             err_msg = f"Unexpected error in {func_name}: {e}. Received query='{query}', params={params}"
             return {"status": "error", "data": err_msg}
 
-    _runner.__name__ = getattr(async_fn, '__name__', '_unknown_adk_runner_query_params')
+    # Derive the tool name from the wrapped function, removing 'wrapped_' prefix
+    tool_name = getattr(async_fn, '__name__', '_unknown_adk_runner_query_params').replace('wrapped_', '')
+    # Explicitly set the runner's __name__ which ADK uses for the tool name if 'name' kwarg is absent
+    _runner.__name__ = tool_name
     _runner.__doc__  = getattr(async_fn, '__doc__', 'ADK Tool Runner (Query/Params)')
-    return FunctionTool(func=_runner)
+    return FunctionTool(func=_runner) # Remove 'name' kwarg
 
 # ────────────────────────────────────────────────────────────────
 #  Public ADK tools
@@ -93,13 +110,100 @@ CypherReadTool: FunctionTool  = _ft_query_params(wrapped_read_neo4j_cypher)
 CypherWriteTool: FunctionTool = _ft_query_params(wrapped_write_neo4j_cypher)
 GdsTool: FunctionTool         = _ft_query_params(wrapped_run_gds_cypher)
 
-# Dictionary mapping capability names to the ADK Tool objects
-# Dictionary mapping capability names (expected by tests) to the ADK Tool objects
+# ────────────────────────────────────────────────────────────────
+#  Alias tools with legacy names (for compatibility / agent hallucination)
+# ────────────────────────────────────────────────────────────────
+# Helper function to create alias tools correctly
+def _make_alias(original_async_fn: Callable, public_alias: str, expects_query: bool = True, is_gds: bool = False) -> FunctionTool:
+    """Creates an alias FunctionTool with the specified public name."""
+    if is_gds:
+        # Special signature for GDS tool to accept either query/params or procedure/parameters
+        async def _runner(*,
+                          query: Optional[str] = None,
+                          params: Optional[Dict[str, Any]] = None,
+                          procedure: Optional[str] = None,
+                          parameters: Optional[Dict[str, Any]] = None,
+                          tool_context: Any) -> Dict[str, Any]:
+            # Call the underlying wrapper, passing all potential arguments
+            try:
+                # The wrapped_run_gds_cypher function handles the logic
+                # of using query/params OR procedure/parameters.
+                return await original_async_fn(
+                    query=query,
+                    params=params,
+                    procedure=procedure,
+                    parameters=parameters
+                )
+            except Exception as e:
+                err_msg = f"Error in GDS alias tool '{public_alias}' calling '{original_async_fn.__name__}': {e}"
+                # Log all potential args for debugging
+                args_repr = f"query='{query}', params={params}, procedure='{procedure}', parameters={parameters}"
+                err_msg += f" | Args: {{{args_repr}}}"
+                return {"status": "error", "data": err_msg}
+    elif expects_query:
+        # Standard signature for tools expecting query/params
+        async def _runner(*, query: str, params: Optional[Dict[str, Any]] = None,
+                          tool_context: Any) -> Dict[str, Any]:
+            try:
+                return await original_async_fn(query=query, params=params)
+            except Exception as e:
+                err_msg = f"Error in alias tool '{public_alias}' calling '{original_async_fn.__name__}': {e}"
+                err_msg += f" | Args: {{'query': '{query}', 'params': {params}}}"
+                return {"status": "error", "data": err_msg}
+    else:   # get_schema (expects no query args)
+        async def _runner(*, tool_context: Any) -> Dict[str, Any]:
+            try:
+                return await original_async_fn()
+            except Exception as e:
+                err_msg = f"Error in alias tool '{public_alias}' calling '{original_async_fn.__name__}': {e}"
+                return {"status": "error", "data": err_msg}
+
+    # Set the public name for the runner function
+    _runner.__name__ = public_alias
+    # Copy the docstring from the original function for the LLM
+    _runner.__doc__ = getattr(original_async_fn, '__doc__', f"Alias for {original_async_fn.__name__}")
+
+    # Create the FunctionTool using only the 'func' argument
+    return FunctionTool(func=_runner)
+
+# --- Alias Tool Definitions using the helper ---
+GetSchemaAlias: FunctionTool = _make_alias(
+    original_async_fn=wrapped_get_neo4j_schema,
+    public_alias="get_schema",
+    expects_query=False # get_schema takes no query/params
+)
+ReadCypherAlias: FunctionTool = _make_alias(
+    original_async_fn=wrapped_read_neo4j_cypher,
+    public_alias="read_cypher",
+    expects_query=True
+)
+WriteCypherAlias: FunctionTool = _make_alias(
+    original_async_fn=wrapped_write_neo4j_cypher,
+    public_alias="write_cypher",
+    expects_query=True
+)
+RunGdsAlias: FunctionTool = _make_alias(
+    original_async_fn=wrapped_run_gds_cypher,
+    public_alias="run_gds_procedure",
+    expects_query=False, # Set to False as it doesn't *require* query
+    is_gds=True # Use the special GDS signature
+)
+
+# Dictionary mapping capability names (expected by tests/rbac) to the ADK Tool objects
+# IMPORTANT: Map the legacy keys to the *new alias tools*
 ALL_ADK_TOOLS: Dict[str, BaseTool] = {
-    "get_schema"        : SchemaTool,
-    "read_cypher"       : CypherReadTool,
-    "write_cypher"      : CypherWriteTool,
-    "run_gds_procedure" : GdsTool,
+    "get_schema"        : GetSchemaAlias,      # Use Alias
+    "read_cypher"       : ReadCypherAlias,     # Use Alias
+    "write_cypher"      : WriteCypherAlias,    # Use Alias
+    "run_gds_procedure" : RunGdsAlias,       # Use Alias
+
+    # Keep original names mapped as well, in case they are referenced directly elsewhere?
+    # Or remove them if only the legacy names are needed via rbac. For now, let's keep them.
+    "get_neo4j_schema_runner": SchemaTool,
+    "read_neo4j_cypher"      : CypherReadTool,
+    "write_neo4j_cypher"     : CypherWriteTool,
+    "run_gds_cypher"         : GdsTool,
+
     # Add future tools here, following the appropriate pattern
     # e.g., if PageRankTool takes specific args like graph_name:
     # PageRankTool = _ft_pagerank_args(pagerank_generator)
