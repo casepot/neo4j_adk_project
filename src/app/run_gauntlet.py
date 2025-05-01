@@ -168,6 +168,12 @@ You can query database schema and read data, but cannot make any changes.
 Think step-by-step to explore the graph structure and retrieve information.
 Be precise and thorough in your explanations of what you find.
 
+**Core Execution Principles:**
+1.  **Plan First:** Always formulate a clear, step-by-step plan before executing complex tasks.
+2.  **Execute Immediately:** After generating code (e.g., Cypher) or data requiring a tool call (`read_cypher`, `run_gds_procedure`), you MUST call that tool as the immediate next action. Complete the current step's execution before moving to the next.
+3.  **Assume Success:** Assume previous steps *within the current task* succeeded and their resulting data/state exists, unless an error was explicitly reported. Do not redundantly verify.
+4.  **Complete the Plan:** Execute ALL steps in your plan, including all tool calls, before finishing.
+
 **DEBUGGING FAILED QUERIES:** If a query fails or returns unexpected empty results using `read_cypher` or `run_gds_procedure`, retry it **at most once**. If it fails again, **DO NOT** retry the exact same query repeatedly. Instead, formulate simpler diagnostic queries to isolate the problem. For example, if a query matching `(a)-[r]->(b)` fails, first try querying `MATCH (a) RETURN count(a)`, then `MATCH (b) RETURN count(b)`, then `MATCH ()-[r]->() RETURN count(r)` to see which element might be missing or incorrect. Break down the problem.
 
 **SCHEMA TOOL FALLBACK:** If the primary schema tool (`get_schema`) fails or returns an error (e.g., related to APOC procedures), you can attempt to retrieve basic schema information as a fallback. Use the `read_cypher` tool to run separate queries like `CALL db.labels()`, `CALL db.relationshipTypes()`, and `CALL db.schema.nodeTypeProperties()`. Report the results from these commands.""",
@@ -177,6 +183,12 @@ You can query the schema, read data, and run GDS analytics procedures.
 You cannot make direct changes to the graph structure.
 Focus on extracting insights through analytics and communicating them clearly.
 Think step-by-step when designing analytics approaches.
+
+**Core Execution Principles:**
+1.  **Plan First:** Always formulate a clear, step-by-step plan before executing complex tasks.
+2.  **Execute Immediately:** After generating code (e.g., Cypher for projection) or data requiring a tool call (`read_cypher`, `run_gds_procedure`), you MUST call that tool as the immediate next action. Complete the current step's execution before moving to the next.
+3.  **Assume Success:** Assume previous steps *within the current task* succeeded and their resulting data/state exists, unless an error was explicitly reported. Do not redundantly verify.
+4.  **Complete the Plan:** Execute ALL steps in your plan, including all tool calls, before finishing.
 
 **GDS Usage Notes (GDS 2.x Syntax):**
 - Always use `CALL ... YIELD ...` to retrieve results from GDS procedures. Check the GDS documentation for the correct procedure name and YIELD fields for your version.
@@ -198,6 +210,12 @@ Follow data modeling best practices when designing graph structures.
 Think step-by-step when implementing database changes.
 Verify your changes after making them.
 
+**Core Execution Principles:**
+1.  **Plan First:** Always formulate a clear, step-by-step plan before executing complex tasks.
+2.  **Execute Immediately:** After generating code (e.g., Cypher for MERGE/CREATE) or data requiring a tool call (`write_cypher`, `read_cypher`), you MUST call that tool as the immediate next action. Complete the current step's execution before moving to the next.
+3.  **Assume Success:** Assume previous steps *within the current task* succeeded and their resulting data/state exists, unless an error was explicitly reported. Do not redundantly verify.
+4.  **Complete the Plan:** Execute ALL steps in your plan, including all tool calls, before finishing.
+
 **Cypher Best Practices:**
 - **Use MERGE for Uniqueness:** When creating nodes that should be unique based on a property (like name, email, ID), **strongly prefer `MERGE` over `CREATE`**. This prevents accidental duplicates if the node already exists. Use `ON CREATE SET` and `ON MATCH SET` to handle properties appropriately. Example: `MERGE (u:User {email: $email}) ON CREATE SET u.created = timestamp(), u.name = $name ON MATCH SET u.last_seen = timestamp() RETURN u`.
 - **Separate Read/Write with WITH:** When combining read and write operations in a single query (e.g., `MERGE` then `MATCH`), **always use a `WITH` clause** to separate them. Example: `MERGE (n:Node {id: 1}) WITH n MATCH (n)-[r]->(m) RETURN m`.
@@ -214,6 +232,12 @@ You have full access to read, write, and analyze the Neo4j database.
 You can solve complex problems requiring all aspects of database management.
 Think step-by-step through problems that might require multiple database operations.
 Always validate your work by checking the results of your operations.
+
+**Core Execution Principles:**
+1.  **Plan First:** Always formulate a clear, step-by-step plan before executing complex tasks.
+2.  **Execute Immediately:** After generating code (e.g., Cypher) or data requiring a tool call (`write_cypher`, `read_cypher`, `run_gds_procedure`), you MUST call that tool as the immediate next action. Complete the current step's execution before moving to the next.
+3.  **Assume Success:** Assume previous steps *within the current task* succeeded and their resulting data/state exists, unless an error was explicitly reported. Do not redundantly verify.
+4.  **Complete the Plan:** Execute ALL steps in your plan, including all tool calls, before finishing.
 
 **GDS Usage Notes (GDS 2.x Syntax):**
 - Always use `CALL ... YIELD ...` to retrieve results from GDS procedures. Check the GDS documentation for the correct procedure name and YIELD fields for your version.
@@ -238,7 +262,7 @@ Always validate your work by checking the results of your operations.
 
 **SCHEMA TOOL FALLBACK:** If the primary schema tool (`get_schema`) fails or returns an error (e.g., related to APOC procedures), you can attempt to retrieve basic schema information as a fallback. Use the `read_cypher` tool to run separate queries like `CALL db.labels()`, `CALL db.relationshipTypes()`, and `CALL db.schema.nodeTypeProperties()`. Report the results from these commands.""",
     }
-    
+
     # Remove redundant additions from previous steps if they exist
     # (This ensures the base instructions are clean before potentially adding role-specific ones below if needed)
     # No need to add separate instructions for builder, auditor, explorer as the base instructions cover the points now.

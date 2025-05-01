@@ -1,6 +1,6 @@
 Okay, let's break down the failure in Challenge 5 based on the new log snippet.
 
-**Goal:** Enhance the graph by adding Projects, Skills, and related relationships (`WORKS_ON`, `HAS_SKILL`, `REQUIRES_SKILL`), then query employee suitability.
+**Challenge 5 Goal:** Enhance the graph by adding Projects, Skills, and related relationships (`WORKS_ON`, `HAS_SKILL`, `REQUIRES_SKILL`), then query employee suitability.
 
 **Execution & Failures:**
 
