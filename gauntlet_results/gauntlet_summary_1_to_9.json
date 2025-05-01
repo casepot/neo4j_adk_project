@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-05-01T01:21:02.225557",
+  "timestamp": "2025-05-01T02:15:13.363471",
   "challenges_run": 9,
   "start_challenge": 1,
   "end_challenge": 9,
@@ -8,20 +8,20 @@
     {
       "id": 1,
       "name": "Schema Exploration",
-      "status": "partial",
-      "score": 5
+      "status": "success",
+      "score": 10
     },
     {
       "id": 2,
       "name": "Company Structure Creation",
-      "status": "success",
-      "score": 10
+      "status": "partial",
+      "score": 1
     },
     {
       "id": 3,
       "name": "Basic Querying",
       "status": "success",
-      "score": 0
+      "score": 10
     },
     {
       "id": 4,
@@ -32,20 +32,20 @@
     {
       "id": 5,
       "name": "Data Enrichment",
-      "status": "success",
-      "score": 10
+      "status": "partial",
+      "score": 1
     },
     {
       "id": 6,
       "name": "Graph Analytics Setup",
-      "status": "success",
-      "score": 0
+      "status": "partial",
+      "score": 6
     },
     {
       "id": 7,
       "name": "Advanced Analytics",
       "status": "success",
-      "score": 10
+      "score": 0
     },
     {
       "id": 8,
@@ -57,9 +57,9 @@
       "id": 9,
       "name": "Final Integration",
       "status": "success",
-      "score": 5
+      "score": 10
     }
   ],
-  "total_score": 51,
+  "total_score": 49,
   "max_possible_score": 90
 }

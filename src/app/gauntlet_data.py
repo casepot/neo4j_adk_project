@@ -747,10 +747,16 @@ class GauntletData:
         # Return overall result
         return verification_passed, feedback
     
-    async def ensure_challenge_prerequisites(self, challenge_id: int, direct_cypher: DirectCypherFunc) -> bool:
+    async def ensure_challenge_prerequisites(
+        self,
+        challenge_id: int,
+        direct_cypher: DirectCypherFunc,
+        previous_challenge_failed: bool = False # Add new parameter
+    ) -> bool:
         """
         Ensures all prerequisites for a challenge are met.
-        If not, attempts to set them up using fallbacks.
+        If the previous challenge failed verification, resets the database first.
+        If defined prerequisites are not met, attempts to set them up using fallbacks.
         
         Args:
             challenge_id: The ID of the challenge to prepare for
@@ -759,7 +765,17 @@ class GauntletData:
         Returns:
             bool: True if prerequisites are now met, False otherwise
         """
-        # Define prerequisites mapping
+        # If the previous challenge's verification failed, reset the DB first
+        # This ensures a clean slate even if the current challenge has no defined prereqs (like C2)
+        if previous_challenge_failed:
+            print("Previous challenge verification failed. Resetting database before prerequisite setup...")
+            reset_result = await self.reset_database(direct_cypher)
+            if reset_result["status"] != "success":
+                print(f"ERROR: Database reset failed during prerequisite setup: {reset_result.get('data')}")
+                # If reset fails, we cannot guarantee the correct state, so fail prerequisite setup
+                return False
+
+        # Define prerequisites mapping (which challenges must have succeeded before this one)
         prerequisites = {
             1: [],  # No prerequisites for challenge 1
             2: [],  # No prerequisites for challenge 2

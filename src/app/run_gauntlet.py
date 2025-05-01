@@ -593,10 +593,16 @@ async def run_challenge(
         print("Attempting to set up prerequisite data automatically...")
         
         # Use the imported gauntlet_data instance to set up prerequisites
-        prereqs_success = await gauntlet_data.ensure_challenge_prerequisites(challenge_id, direct_cypher)
+        # Pass whether the previous challenge's verification failed
+        prereqs_success = await gauntlet_data.ensure_challenge_prerequisites(
+            challenge_id=challenge_id,
+            direct_cypher=direct_cypher,
+            previous_challenge_failed=not pre_check_success # Pass the failure status
+        )
         if prereqs_success:
-            print("✅ Prerequisite data setup successful!")
-            used_fallback = True
+            # This message now means reset (if needed) and specific prereqs were set up ok.
+            print("✅ Prerequisite check/setup successful!")
+            used_fallback = True # Indicate that some setup action might have occurred
         else:
             print("❌ Failed to set up prerequisites. Challenge may fail.")
     
