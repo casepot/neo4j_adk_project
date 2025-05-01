@@ -40,7 +40,7 @@ This repository provides a baseline structure and production-ready code for inte
     - `write`: Executing Cypher queries that may mutate the graph.
     - `gds`: Executing Cypher queries for the Graph Data Science library.
 - **Role-Based Access Control**: Pre-defined roles (`explorer`, `auditor`, `builder`, `admin`) with easily configurable capabilities.
-- **Neo4j Best Practices**: Includes read/write session separation, timeout handling, and hooks for impersonation and read routing (Enterprise features).
+- **Neo4j Best Practices**: Includes read/write session separation, timeout handling, and hooks for database user impersonation and read routing (Enterprise features).
 - **Extensibility**: Clear structure for adding new tools and capabilities.
 - **Optional Long-Running Tool**: Example `pagerank.py` demonstrates streaming progress for long GDS tasks using `LongRunningFunctionTool`.
 
@@ -114,7 +114,10 @@ neo4j_adk_project/
 5.  **Configure Credentials**:
     ```bash
     cp .env.example .env
-    # Edit .env with your Neo4j URI, User, Password
+    # Edit .env with your Neo4j URI, User, Password:
+    # NEO4J_URI=bolt://localhost:7687
+    # NEO4J_USER=neo4j
+    # NEO4J_PASSWORD=your_password
     # Also add GOOGLE_API_KEY if running the example with Gemini
     ```
 6.  **Run Example**:
@@ -139,11 +142,18 @@ During development and testing, several issues were identified and resolved:
     *   **Missing `src/__init__.py`**: Prevented Python from treating `src` as a package, breaking relative imports. An empty `src/__init__.py` was created.
     *   **Circular Dependency**: An import cycle existed between `agent.py`, `neo4j_adk_tools.py`, and `rbac.py`. Resolved by moving wrapper functions from `agent.py` to a new `src/wrappers.py` file.
     *   **Incorrect `neo4j` Import**: `neo4j_tools.py` imported `Summary` instead of `ResultSummary`, incompatible with `neo4j` library version 5.x. This was corrected.
+5.  **Import path in `pagerank.py`**: The import path in `pagerank.py` needs to be updated to import from `wrappers.py` instead of `agent.py` since the wrapper functions were moved.
+
+## Key Dependencies
+
+- **Neo4j Python Driver**: Version 5.x (async capabilities required)
+- **Google ADK**: Latest version from Google Agent Development Kit
+- **Python**: 3.8 or newer (for asyncio and type hints)
 
 ## Known Unknowns / TODO Hooks
 
 - **Cluster Routing Policy**: Implement logic if using read replicas (`route_read=True` in `rbac.py`).
-- **Impersonation Mapping**: Enhance mapping from external auth (e.g., JWT) to Neo4j users (`impersonated_user` in `rbac.py`).
+- **Impersonation Mapping**: Enhance mapping from external auth (e.g., JWT) to Neo4j users (`db_impersonate` in `rbac.py`).
 - **Observability**: Integrate OpenTelemetry or other tracing within `neo4j_tools._log_query`.
 - **Schema Cache**: Consider Redis or similar if schema introspection becomes slow.
 - **LLM Initialization**: The example script currently uses a placeholder model name (`llm_model_name`). Uncomment and configure the `genai` sections in `run_example.py` (lines 49-57, 161) and ensure `GOOGLE_API_KEY` is set in `.env` to use a real LLM.
