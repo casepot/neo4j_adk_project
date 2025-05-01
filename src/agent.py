@@ -44,19 +44,40 @@ async def initialize_neo4j_driver():
     NEO4J_USER = os.getenv("NEO4J_USER")
     NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
+    # --- Add Env Var Logging ---
+    print(f"DEBUG: Loaded NEO4J_URI: {NEO4J_URI}")
+    print(f"DEBUG: Loaded NEO4J_USER: {NEO4J_USER}")
+    print(f"DEBUG: Loaded NEO4J_PASSWORD: {NEO4J_PASSWORD}") # Print actual password for debugging
+    # --- End Env Var Logging ---
+
     if not NEO4J_URI or not NEO4J_USER or not NEO4J_PASSWORD:
         print("Error: Neo4j connection details (URI, USER, PASSWORD) not found in environment variables.")
         # In a real app, you might raise an exception here
         return
 
-    try:
-        print(f"Attempting to connect to Neo4j at {NEO4J_URI} as user {NEO4J_USER}...")
-        driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-        await driver.verify_connectivity()
-        print("Neo4j driver initialized successfully.")
-    except Exception as e:
-        print(f"Error initializing Neo4j driver: {e}")
-        driver = None # Ensure driver is None if initialization fails
+    # --- Add Retry Logic ---
+    import asyncio
+    max_retries = 5
+    retry_delay_seconds = 3
+    for attempt in range(max_retries):
+        try:
+            print(f"Attempting to connect to Neo4j at {NEO4J_URI} as user {NEO4J_USER}... (Attempt {attempt + 1}/{max_retries})")
+            driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+            # Remove the config argument from verify_connectivity
+            await driver.verify_connectivity()
+            print("Neo4j driver initialized successfully.")
+            break # Exit loop on success
+        except Exception as e:
+            print(f"Error initializing Neo4j driver (Attempt {attempt + 1}/{max_retries}): {e}")
+            driver = None # Ensure driver is None on failure
+            if attempt < max_retries - 1:
+                print(f"Retrying in {retry_delay_seconds} seconds...")
+                await asyncio.sleep(retry_delay_seconds)
+            else:
+                print("Max connection retries reached. Failed to initialize Neo4j driver.")
+                # Optionally, re-raise the last exception or handle failure appropriately
+                # raise e # Example: re-raise the last exception
+    # --- End Retry Logic ---
 
 async def shutdown_neo4j_driver():
     """Closes the Neo4j driver connection."""

@@ -813,6 +813,14 @@ async def run_gauntlet(start_challenge: int = 1, end_challenge: int = 9, auto_fa
     
     # Initialize database connection
     await initialize_neo4j_driver()
+    # --- Add Driver Status Check ---
+    driver_instance = get_driver()
+    if driver_instance:
+        print("✅ Neo4j driver appears to be initialized successfully after initialize_neo4j_driver() call.")
+    else:
+        print("❌ Neo4j driver is NOT initialized after initialize_neo4j_driver() call. Exiting.")
+        return {"status": "error", "message": "Neo4j driver failed to initialize."}
+    # --- End Driver Status Check ---
 # Purge any existing sessions before starting the run
     await _purge_sessions_if_needed()
     

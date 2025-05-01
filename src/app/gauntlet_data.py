@@ -615,10 +615,27 @@ class GauntletData:
         delete_result = await direct_cypher(delete_query, {}, write_mode=True)
 
         # Log the summary counters from the delete operation
-        summary = delete_result.get("data", {}).get("summary", {})
+        summary = {} # Default to empty summary
+        if isinstance(delete_result, dict) and delete_result.get("status") == "success":
+            # Safely access nested data if delete_result is a dict and successful
+            data_payload = delete_result.get("data", {})
+            if isinstance(data_payload, dict): # Ensure data payload is also a dict
+                summary = data_payload.get("summary", {})
+            else:
+                # Handle cases where 'data' might not be a dict (e.g., list of results)
+                # For DETACH DELETE, we expect a summary, so this case might indicate an issue
+                print(f"Warning: Expected 'data' in delete_result to be a dict, but got {type(data_payload)}. Summary might be incomplete.")
+        elif isinstance(delete_result, dict):
+            # Handle cases where delete_result is a dict but status is not 'success'
+            print(f"Warning: DETACH DELETE reported status '{delete_result.get('status', 'Unknown')}'")
+        else:
+            # Handle cases where delete_result is not a dict (e.g., an error string)
+            print(f"Warning: DETACH DELETE result was not a dictionary (likely an error): {delete_result}")
+
         print(f"DETACH DELETE summary: {summary}")
 
-        if delete_result["status"] != "success":
+        # Check status after logging summary
+        if not isinstance(delete_result, dict) or delete_result.get("status") != "success":
             return {
                 "status": "error",
                 "data": f"Error executing DETACH DELETE query: {delete_result.get('data', 'Unknown error')}"
