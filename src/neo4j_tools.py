@@ -88,6 +88,8 @@ async def _execute_cypher_session(
         # Timeout needs to be configured on the transaction or session level if needed
         # for the driver to manage it internally. The asyncio.wait_for here acts as
         # a safeguard for the entire operation within the session context.
+        # Add detailed logging immediately before the driver call
+        logger.debug(f"Executing session.run with: query='{query}', params={_mask_params(params)}")
         result: Result = await asyncio.wait_for(
             session.run(query, params),
             timeout=timeout_ms / 1000.0 # asyncio.wait_for uses seconds
@@ -217,8 +219,9 @@ async def get_schema(
                      schema_info = "\n".join(sorted([part for part in schema_parts if part.startswith("Node:")]))
                      # status remains 'error' to trigger fallback below
                 elif not schema_parts:
-                    logger.warning("apoc.meta.schema() call succeeded but returned no schema data at all.")
-                    # Proceed to fallback, status remains 'error'
+                    logger.info("apoc.meta.schema() call succeeded but returned no schema data (database likely empty). Proceeding to fallback.")
+                    # Set schema_info to indicate empty, but proceed to fallback. Status remains 'error' for now.
+                    schema_info = "No schema elements found via APOC."
                 # If schema_map wasn't a dict, status is already 'error'
             else: # This case handles if results[0].get('value') was not a dict
                  logger.warning("apoc.meta.schema() call did not return the expected dictionary structure.")
@@ -284,13 +287,21 @@ async def get_schema(
                      status = "success"
                      logger.info("Schema fetched successfully using CALL db.* fallback procedures.")
                 else:
-                     # Fallback also failed to find anything
-                     logger.warning("Fallback schema fetch using CALL db.* returned no data.")
-                     schema_info = "Schema information could not be retrieved via APOC or fallback procedures."
-                     status = "error" # Keep status as error
+                    # Fallback also failed to find anything
+                    logger.info("Fallback schema fetch using CALL db.* also returned no data (database likely empty).")
+                    # If APOC also found nothing, report success with empty message.
+                    # If APOC found nodes but no rels, keep the node info and report success.
+                    if schema_info == "No schema elements found via APOC.":
+                        schema_info = "No schema elements found (database is empty)."
+                    # If schema_info contains node data from APOC, keep it.
+                    # Otherwise (e.g., APOC failed), use the empty message.
+                    elif not schema_info.startswith("Node:"):
+                         schema_info = "No schema elements found (database is empty)."
+
+                    status = "success" # Report success even if empty
 
             except (ClientError, TimeoutError, Exception) as e:
-                logger.error(f"Fallback schema fetch using SHOW commands failed: {e}")
+                logger.error(f"Fallback schema fetch using CALL db.* failed: {e}")
                 schema_info = f"Fallback Schema Error: {str(e)}"
                 status = "error"
 
@@ -340,6 +351,7 @@ async def run_cypher(
             #     return {"status": "error", "data": "Query failed EXPLAIN plan safety check."}
 
             # 2. Execute Query
+            logger.debug(f"Calling _execute_cypher_session from run_cypher with: query='{query}', params={_mask_params(params)}") # Add logging here
             results, summary = await _execute_cypher_session(session, query, params, timeout_ms)
 
             # Format response based on access mode (write includes summary)
@@ -349,12 +361,10 @@ async def run_cypher(
                 # MERGE returning zero counters is valid if the data already exists.
                 is_merge_query = "MERGE " in query.strip().upper() # Simple check for MERGE keyword
                 if not is_gds_call and not is_merge_query and not any(summary.values()):
-                    logger.warning(f"Non-GDS, non-MERGE write query succeeded but returned zero counters: {query}")
-                    # Still return error for non-MERGE writes with no changes (e.g., CREATE, SET, DELETE that match nothing)
-                    return {"status": "error",
-                            "data": "Write query succeeded but reported zero changes (counters are all zero)."}
+                    logger.warning(f"Non-GDS, non-MERGE write query succeeded but returned zero counters (e.g., MATCH...SET found no nodes): {query}")
+                    # Log warning but proceed to return success, as the query itself didn't fail.
                 elif not is_gds_call and is_merge_query and not any(summary.values()):
-                     logger.info(f"MERGE query succeeded with zero counters (data likely existed): {query}")
+                     logger.info(f"MERGE query succeeded with zero counters (data likely already existed): {query}")
                      # For MERGE, zero counters means success (data existed), so proceed.
 
                 # For GDS calls or successful writes/merges, return results and summary

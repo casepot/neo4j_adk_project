@@ -17,6 +17,9 @@ except ImportError:
     from src.agent import get_driver # type: ignore # Use absolute path
     from src import neo4j_tools # type: ignore # Use absolute path
 
+# Get logger instance
+logger = logging.getLogger(__name__)
+
 
 # --- Core Neo4j Wrappers ---
 
@@ -156,18 +159,25 @@ def _convert_neo4j_types(data: Any) -> Any:
         except AttributeError:
             # Fallback if iso_format is not available or fails
             return str(data)
-    # Add conversions for other Neo4j types (Date, Duration, Point) if needed
-    # elif isinstance(data, neo4j.time.Date): return data.iso_format()
-    # elif isinstance(data, neo4j.time.Duration): return str(data) # Or format as needed
-    # elif isinstance(data, neo4j.spatial.Point): return {"srid": data.srid, "x": data.x, "y": data.y, "z": data.z}
+    # Add conversions for other Neo4j types
+    elif isinstance(data, Date):
+        return data.iso_format() # Convert Date to ISO string
+    elif isinstance(data, Duration):
+        return str(data) # Convert Duration to string representation
+    elif isinstance(data, Point):
+        # Convert Point to a dictionary, handling optional Z coordinate
+        point_dict = {"srid": data.srid, "x": data.x, "y": data.y}
+        if hasattr(data, 'z') and data.z is not None: # Check if z exists and is not None
+            point_dict["z"] = data.z
+        return point_dict
     else:
         return data
 
 async def wrapped_run_gds_cypher(
     query: Optional[str] = None,
-    params: Optional[Dict[str, Any]] = None,
+    params: Optional[Dict[str, Any]] = None, # Keep this name
     procedure: Optional[str] = None,
-    parameters: Optional[Dict[str, Any]] = None,
+    parameters: Optional[Dict[str, Any]] = None, # Keep this name
     db: Optional[str] = None,
     db_impersonate: Optional[str] = None,
     timeout_ms: int = 60000, # Longer default for GDS
@@ -203,39 +213,57 @@ async def wrapped_run_gds_cypher(
     Returns:
         Dict[str, Any]: {"status": "success"|"error", "data": [gds_results]|error_message}
     """
-    driver = get_driver() # Get driver instance
+    driver = get_driver()
     if not driver:
         return {"status": "error", "data": "Neo4j driver not initialized."}
 
-    final_query: Optional[str] = query
-    final_params: Optional[Dict[str, Any]] = params
+    exec_query: Optional[str] = query
+    exec_params: Optional[Dict[str, Any]] = params # Use a different internal variable name
 
-    if not final_query:
-        # Build a Cypher CALL from procedure/parameters
-        if not procedure:
-            return {"status": "error", "data": "Must supply either `query` or (`procedure`, `parameters`)."}
-        # Use the 'parameters' dict as the params for the constructed query
-        final_params = parameters
-        # Construct the CALL string, using parameter keys
-        param_str = ", ".join(f"${k}" for k in final_params or {})
-        final_query = f"CALL {procedure}({param_str})"
-        print(f"Executing wrapped_run_gds_cypher(procedure='{procedure}', parameters={final_params}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
+    log_params_repr = None # For logging
+
+    if procedure:
+        # Mode: procedure + parameters
+        if query or params:
+             return {"status": "error", "data": "Cannot use both 'query'/'params' and 'procedure'/'parameters'. Use one pair."}
+        if not parameters:
+            parameters = {} # Allow procedures with no parameters
+
+        exec_params = parameters # Set the parameters to be used for execution
+        # Construct the CALL string using parameter keys from 'parameters' dict
+        param_str = ", ".join(f"${k}" for k in parameters)
+        exec_query = f"CALL {procedure}({param_str})"
+        log_params_repr = f"procedure='{procedure}', parameters={exec_params}" # Log what was provided
+        print(f"Executing wrapped_run_gds_cypher({log_params_repr}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
+
+    elif query:
+        # Mode: query + params
+        if procedure or parameters:
+             return {"status": "error", "data": "Cannot use both 'query'/'params' and 'procedure'/'parameters'. Use one pair."}
+        # exec_query is already set to query
+        # exec_params is already set to params
+        log_params_repr = f"query='{exec_query}', params={exec_params}" # Log what was provided
+        print(f"Executing wrapped_run_gds_cypher({log_params_repr}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
     else:
-        # Using the provided query string
-        print(f"Executing wrapped_run_gds_cypher(query='{final_query}', params={final_params}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
+         # Neither query nor procedure provided
+         return {"status": "error", "data": "Must supply either 'query' or 'procedure'."}
 
-    if not final_query: # Should not happen if logic above is correct, but safety check
+
+    if not exec_query: # Safety check
          return {"status": "error", "data": "Internal error: Failed to determine query string."}
 
-    # GDS almost always requires WRITE access, even for read-like projections if they materialize graphs
+    # Add detailed logging before calling run_cypher
+    logger.debug(f"Calling neo4j_tools.run_cypher with: query='{exec_query}', params={exec_params}")
+
+    # Call the core run_cypher tool, passing the determined query and parameters
     result = await neo4j_tools.run_cypher(
         driver=driver,
-        query=final_query,
-        params=final_params,
+        query=exec_query,
+        params=exec_params, # Pass the correct dictionary
         db=db,
         impersonate=db_impersonate,
         timeout_ms=timeout_ms,
-        access_mode="WRITE"
+        access_mode="WRITE" # GDS usually needs WRITE
     )
 
     # Convert Neo4j specific types in the result data before returning

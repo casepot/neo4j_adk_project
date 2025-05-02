@@ -55,9 +55,11 @@ async def test_get_schema_success():
     # Case 3: Success scenario
     elif status == "success":
         assert "data" in result, "Result should contain 'data' key"
-        assert isinstance(result["data"], list), "Schema data should be a list"
-        # Add more specific checks if a known schema structure is expected
-    
+        # The get_schema function returns a formatted string representation
+        assert isinstance(result["data"], str), "Schema data should be a string"
+        # Optional: Add checks for specific content within the string if needed
+        # assert "Node Labels:" in result["data"] or "Relationship Types:" in result["data"] or "Property Keys:" in result["data"] or "No schema elements found" in result["data"]
+
     # Case 4: Unexpected failure
     else:
         pytest.fail(f"Schema fetching failed with unexpected error: {data}")
