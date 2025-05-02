@@ -127,28 +127,21 @@ def build_agent_tools(
             # where _make_ft preserves the original function's identity somewhat.
             # A more robust way might be needed if _make_ft changes significantly.
 
-            # Let's find the original underlying function associated with the tool.
-            # This is a bit hacky, relying on how _make_ft was implemented.
+            # Retrieve the original async function attached by _make_alias
             original_func = None
-            if isinstance(tool, FunctionTool) and hasattr(tool.func, '__closure__'):
-                 # Look inside the closure of the _runner created by _make_ft
-                 for cell in tool.func.__closure__:
-                     if callable(cell.cell_contents) and hasattr(cell.cell_contents, '__name__') and cell.cell_contents.__name__.startswith('wrapped_'):
-                         original_func = cell.cell_contents
-                         break
+            if isinstance(tool, FunctionTool) and hasattr(tool.func, '_original_func'):
+                original_func = getattr(tool.func, '_original_func', None)
 
-            if not original_func:
-                 # Fallback or error if we can't find the original function to wrap
-                 print(f"Warning: Could not determine original wrapper function for tool '{cap_name}' to apply impersonation/routing. Using original tool.")
-                 agent_tools.append(tool)
-                 continue
+            if not original_func or not callable(original_func):
+                 # Raise an error if we cannot find the function to wrap.
+                 # This indicates a problem with the tool registration in neo4j_adk_tools.py
+                 raise ValueError(f"Could not find original callable function for tool '{cap_name}' to apply RBAC wrapper. Check _make_alias in neo4j_adk_tools.py.")
 
 
             # Create a new async function that calls the original wrapper
             # with the added impersonation/routing kwargs.
             # Fix closure capture bug: Add cap_name=cap_name as default arg
-            async def _bound_runner(*args, original_async_func=original_func, tool_ref=tool, cap_name=cap_name, **kwargs):
-                # The arguments passed here by ADK will be in 'kwargs' under the 'args' key.
+            async def _bound_runner(*args, original_async_func=original_func, cap_name=cap_name, **kwargs):
                 # ADK passes tool inputs directly as keyword arguments to the runner.
                 # We need to extract them from kwargs, excluding the 'tool_context' ADK adds.
                 inner_args = {k: v for k, v in kwargs.items() if k != 'tool_context'}

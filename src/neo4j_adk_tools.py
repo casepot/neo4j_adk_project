@@ -115,7 +115,10 @@ GdsTool: FunctionTool         = _ft_query_params(wrapped_run_gds_cypher)
 # ────────────────────────────────────────────────────────────────
 # Helper function to create alias tools correctly
 def _make_alias(original_async_fn: Callable, public_alias: str, expects_query: bool = True, is_gds: bool = False) -> FunctionTool:
-    """Creates an alias FunctionTool with the specified public name."""
+    """
+    Creates an alias FunctionTool with the specified public name.
+    Crucially, it attaches the original async function to the runner for RBAC wrapping.
+    """
     if is_gds:
         # Special signature for GDS tool to accept either query/params or procedure/parameters
         async def _runner(*,
@@ -163,6 +166,9 @@ def _make_alias(original_async_fn: Callable, public_alias: str, expects_query: b
     # Copy the docstring from the original function for the LLM
     _runner.__doc__ = getattr(original_async_fn, '__doc__', f"Alias for {original_async_fn.__name__}")
 
+    # Attach the original function to the runner for RBAC wrapper to find
+    _runner._original_func = original_async_fn # type: ignore
+
     # Create the FunctionTool using only the 'func' argument
     return FunctionTool(func=_runner)
 
@@ -192,21 +198,17 @@ RunGdsAlias: FunctionTool = _make_alias(
 # Dictionary mapping capability names (expected by tests/rbac) to the ADK Tool objects
 # IMPORTANT: Map the legacy keys to the *new alias tools*
 ALL_ADK_TOOLS: Dict[str, BaseTool] = {
-    "get_schema"        : GetSchemaAlias,      # Use Alias
-    "read_cypher"       : ReadCypherAlias,     # Use Alias
-    "write_cypher"      : WriteCypherAlias,    # Use Alias
-    "run_gds_procedure" : RunGdsAlias,       # Use Alias
+    # Only expose the public alias tools under their canonical names.
+    # RBAC/tests should refer to these names.
+    "get_schema"        : GetSchemaAlias,
+    "read_cypher"       : ReadCypherAlias,
+    "write_cypher"      : WriteCypherAlias,
+    "run_gds_procedure" : RunGdsAlias,
 
-    # Keep original names mapped as well, in case they are referenced directly elsewhere?
-    # Or remove them if only the legacy names are needed via rbac. For now, let's keep them.
-    "get_neo4j_schema_runner": SchemaTool,
-    "read_neo4j_cypher"      : CypherReadTool,
-    "write_neo4j_cypher"     : CypherWriteTool,
-    "run_gds_cypher"         : GdsTool,
+    # The non-alias tools (SchemaTool, CypherReadTool, etc.) are internal
+    # implementation details and should not be directly exposed or used.
 
-    # Add future tools here, following the appropriate pattern
-    # e.g., if PageRankTool takes specific args like graph_name:
-    # PageRankTool = _ft_pagerank_args(pagerank_generator)
+    # Add future tools here, ensuring they use the alias pattern if needed.
 }
 
 # Example for LongRunningFunctionTool if needed (adjust helper signature)
