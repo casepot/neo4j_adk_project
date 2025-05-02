@@ -146,32 +146,54 @@ async def wrapped_write_neo4j_cypher(
 
 
 # --- Helper for Serialization ---
-def _convert_neo4j_types(data: Any) -> Any:
-    """Recursively converts Neo4j temporal types in results to strings."""
-    if isinstance(data, list):
-        return [_convert_neo4j_types(item) for item in data]
-    elif isinstance(data, dict):
-        return {k: _convert_neo4j_types(v) for k, v in data.items()}
-    elif isinstance(data, DateTime):
-        try:
-            # Attempt to convert to ISO format string
-            return data.iso_format()
-        except AttributeError:
-            # Fallback if iso_format is not available or fails
-            return str(data)
-    # Add conversions for other Neo4j types
-    elif isinstance(data, Date):
-        return data.iso_format() # Convert Date to ISO string
-    elif isinstance(data, Duration):
-        return str(data) # Convert Duration to string representation
-    elif isinstance(data, Point):
-        # Convert Point to a dictionary, handling optional Z coordinate
-        point_dict = {"srid": data.srid, "x": data.x, "y": data.y}
-        if hasattr(data, 'z') and data.z is not None: # Check if z exists and is not None
-            point_dict["z"] = data.z
+def _convert_neo4j_types(value: Any) -> Any:
+    """Return JSON-serialisable representation of Neo4j types."""
+    # Handle basic types and recursion
+    if isinstance(value, list):
+        return [_convert_neo4j_types(item) for item in value]
+    elif isinstance(value, dict):
+        return {k: _convert_neo4j_types(v) for k, v in value.items()}
+
+    # Handle Neo4j temporal types using iso_format() or __str__()
+    if isinstance(value, (Date, DateTime, Time)):
+        return value.iso_format()
+    if isinstance(value, Duration):
+        return value.__str__() # Use ISO-8601 duration string
+
+    # Handle Neo4j spatial types
+    if isinstance(value, Point):
+        point_dict = {"srid": value.srid, "x": value.x, "y": value.y}
+        if hasattr(value, 'z') and value.z is not None:
+            point_dict["z"] = value.z
         return point_dict
-    else:
-        return data
+
+    # Handle Neo4j graph types (convert to simple dict representation)
+    # Note: This might lose some metadata, adjust if needed.
+    if isinstance(value, Node):
+         # Convert node to dict including element_id, labels, and properties
+         return {
+             "element_id": value.element_id,
+             "labels": list(value.labels),
+             "properties": _convert_neo4j_types(dict(value.items())) # Recursively convert properties
+         }
+    if isinstance(value, Relationship):
+         # Convert relationship to dict including element_id, type, start/end node element_ids, and properties
+         return {
+             "element_id": value.element_id,
+             "type": value.type,
+             "start_node_element_id": value.start_node.element_id if value.start_node else None,
+             "end_node_element_id": value.end_node.element_id if value.end_node else None,
+             "properties": _convert_neo4j_types(dict(value.items())) # Recursively convert properties
+         }
+    if isinstance(value, Path):
+         # Convert path to a list of its nodes and relationships
+         return {
+             "nodes": [_convert_neo4j_types(node) for node in value.nodes],
+             "relationships": [_convert_neo4j_types(rel) for rel in value.relationships]
+         }
+
+    # Return value unchanged if no specific conversion is needed
+    return value
 
 async def wrapped_run_gds_cypher(
     query: Optional[str] = None,

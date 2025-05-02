@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-05-01T20:28:37.068607",
+  "timestamp": "2025-05-01T21:07:09.340047",
   "challenges_run": 9,
   "start_challenge": 1,
   "end_challenge": 9,
@@ -9,13 +9,13 @@
       "id": 1,
       "name": "Schema Exploration",
       "status": "success",
-      "score": 9
+      "score": 10
     },
     {
       "id": 2,
       "name": "Company Structure Creation",
-      "status": "partial",
-      "score": 6
+      "status": "failed",
+      "score": 0
     },
     {
       "id": 3,
@@ -32,8 +32,8 @@
     {
       "id": 5,
       "name": "Data Enrichment",
-      "status": "failed",
-      "score": 0
+      "status": "partial",
+      "score": 6
     },
     {
       "id": 6,
@@ -60,6 +60,6 @@
       "score": 10
     }
   ],
-  "total_score": 62,
+  "total_score": 63,
   "max_possible_score": 90
 }
