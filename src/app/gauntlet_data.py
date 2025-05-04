@@ -20,24 +20,24 @@ DirectCypherFunc = Callable[[str, Optional[Dict[str, Any]], bool], Awaitable[Dic
 
 # --- Challenge 2: Company Structure Setup Queries ---
 COMPANY_SETUP_QUERIES = [
-    # Create Departments
+    # Create Departments (Use MERGE for idempotency)
     """
-    CREATE (:Department {name: 'Engineering', budget: 1500000, location: 'Building A'})
-    CREATE (:Department {name: 'Marketing', budget: 800000, location: 'Building B'})
-    CREATE (:Department {name: 'Sales', budget: 1200000, location: 'Building B'})
-    CREATE (:Department {name: 'Human Resources', budget: 500000, location: 'Building A'})
+    MERGE (d:Department {name: 'Engineering'}) ON CREATE SET d.budget = 1500000, d.location = 'Building A'
+    MERGE (d:Department {name: 'Marketing'}) ON CREATE SET d.budget = 800000, d.location = 'Building B'
+    MERGE (d:Department {name: 'Sales'}) ON CREATE SET d.budget = 1200000, d.location = 'Building B'
+    MERGE (d:Department {name: 'Human Resources'}) ON CREATE SET d.budget = 500000, d.location = 'Building A'
     """,
     
-    # Create Employees
+    # Create Employees (Use MERGE for idempotency, using 'id' as the unique key)
     """
-    CREATE (:Employee {name: 'Alice Smith', title: 'CTO', hire_date: '2019-01-15', salary: 185000, id: 'E001'})
-    CREATE (:Employee {name: 'Bob Johnson', title: 'Engineering Manager', hire_date: '2020-03-01', salary: 145000, id: 'E002'})
-    CREATE (:Employee {name: 'Carol Williams', title: 'Senior Developer', hire_date: '2021-05-10', salary: 125000, id: 'E003'})
-    CREATE (:Employee {name: 'Dave Brown', title: 'Junior Developer', hire_date: '2022-09-01', salary: 85000, id: 'E004'})
-    CREATE (:Employee {name: 'Eve Davis', title: 'Marketing Director', hire_date: '2021-02-15', salary: 140000, id: 'E005'})
-    CREATE (:Employee {name: 'Frank Miller', title: 'Sales Director', hire_date: '2021-01-20', salary: 150000, id: 'E006'})
-    CREATE (:Employee {name: 'Grace Wilson', title: 'HR Manager', hire_date: '2022-04-01', salary: 110000, id: 'E007'})
-    CREATE (:Employee {name: 'Heidi Moore', title: 'Sales Representative', hire_date: '2022-07-15', salary: 75000, id: 'E008'})
+    MERGE (e:Employee {id: 'E001'}) ON CREATE SET e.name = 'Alice Smith', e.title = 'CTO', e.hire_date = '2019-01-15', e.salary = 185000
+    MERGE (e:Employee {id: 'E002'}) ON CREATE SET e.name = 'Bob Johnson', e.title = 'Engineering Manager', e.hire_date = '2020-03-01', e.salary = 145000
+    MERGE (e:Employee {id: 'E003'}) ON CREATE SET e.name = 'Carol Williams', e.title = 'Senior Developer', e.hire_date = '2021-05-10', e.salary = 125000
+    MERGE (e:Employee {id: 'E004'}) ON CREATE SET e.name = 'Dave Brown', e.title = 'Junior Developer', e.hire_date = '2022-09-01', e.salary = 85000
+    MERGE (e:Employee {id: 'E005'}) ON CREATE SET e.name = 'Eve Davis', e.title = 'Marketing Director', e.hire_date = '2021-02-15', e.salary = 140000
+    MERGE (e:Employee {id: 'E006'}) ON CREATE SET e.name = 'Frank Miller', e.title = 'Sales Director', e.hire_date = '2021-01-20', e.salary = 150000
+    MERGE (e:Employee {id: 'E007'}) ON CREATE SET e.name = 'Grace Wilson', e.title = 'HR Manager', e.hire_date = '2022-04-01', e.salary = 110000
+    MERGE (e:Employee {id: 'E008'}) ON CREATE SET e.name = 'Heidi Moore', e.title = 'Sales Representative', e.hire_date = '2022-07-15', e.salary = 75000
     """,
     
     # Create WORKS_IN relationships (Use MERGE for idempotency and efficiency)

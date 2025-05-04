@@ -5,7 +5,9 @@ These handle the direct interaction with the Neo4j driver via neo4j_tools.
 """
 
 from typing import Dict, Any, Optional, List, Union
-from neo4j.time import DateTime # Import DateTime
+from neo4j.time import Date, DateTime, Time, Duration # Import all required temporal types
+from neo4j.spatial import Point # Import Point for spatial types
+from neo4j.graph import Node, Relationship, Path # Import graph types for completeness
 import logging
 # Import the driver access function and the core tool functions
 try:
@@ -93,7 +95,7 @@ async def wrapped_read_neo4j_cypher(
         # For now, we rely on the access_mode="READ" in neo4j_tools.
         pass # Let neo4j_tools handle the access mode enforcement
 
-    return await neo4j_tools.run_cypher(
+    result = await neo4j_tools.run_cypher(
         driver=driver,
         query=query,
         params=params,
@@ -103,6 +105,10 @@ async def wrapped_read_neo4j_cypher(
         access_mode="READ",
         route_read=route_read
     )
+    # Convert Neo4j specific types in the result data before returning
+    if result.get("status") == "success" and "data" in result:
+        result["data"] = _convert_neo4j_types(result["data"])
+    return result
 
 
 async def wrapped_write_neo4j_cypher(
@@ -134,7 +140,7 @@ async def wrapped_write_neo4j_cypher(
     if not driver:
         return {"status": "error", "data": "Neo4j driver not initialized."}
     print(f"Executing wrapped_write_neo4j_cypher(query='{query}', params={params}, db={db}, impersonate={db_impersonate}, timeout={timeout_ms})")
-    return await neo4j_tools.run_cypher(
+    result = await neo4j_tools.run_cypher(
         driver=driver,
         query=query,
         params=params,
@@ -143,6 +149,10 @@ async def wrapped_write_neo4j_cypher(
         timeout_ms=timeout_ms,
         access_mode="WRITE"
     )
+    # Convert Neo4j specific types in the result data before returning
+    if result.get("status") == "success" and "data" in result:
+        result["data"] = _convert_neo4j_types(result["data"])
+    return result
 
 
 # --- Helper for Serialization ---

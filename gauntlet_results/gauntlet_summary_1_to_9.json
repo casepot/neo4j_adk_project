@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-05-01T21:07:09.340047",
+  "timestamp": "2025-05-01T21:47:47.990773",
   "challenges_run": 9,
   "start_challenge": 1,
   "end_challenge": 9,
@@ -14,8 +14,8 @@
     {
       "id": 2,
       "name": "Company Structure Creation",
-      "status": "failed",
-      "score": 0
+      "status": "partial",
+      "score": 6
     },
     {
       "id": 3,
@@ -51,7 +51,7 @@
       "id": 8,
       "name": "Data Transformation",
       "status": "partial",
-      "score": 1
+      "score": 6
     },
     {
       "id": 9,
@@ -60,6 +60,6 @@
       "score": 10
     }
   ],
-  "total_score": 63,
+  "total_score": 74,
   "max_possible_score": 90
 }
